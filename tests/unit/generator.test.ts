@@ -63,3 +63,14 @@ describe('generateBuilding', () => {
     expect(JSON.stringify(generateBuilding(p).scene)).toEqual(JSON.stringify(generateBuilding(p).scene));
   });
 });
+
+import { STARTERS } from '@/core/generator/starters';
+describe('starter projects', () => {
+  for (const s of STARTERS) {
+    it(`${s.name} generates a valid scene`, () => {
+      const { scene } = generateBuilding(s.program);
+      expect(validateScene(scene).filter((i) => i.severity === 'error')).toEqual([]);
+      expect(scene.elements.filter((e) => e.type === 'furniture').length).toBeGreaterThan(2);
+    });
+  }
+});
