@@ -8,7 +8,7 @@
  */
 import type { Element, Vec2, WallElement } from '../schema/elements';
 import { emptyScene, type Level, type Scene } from '../schema/scene';
-import { buildGrid, extractEdges, mergeCollinear, outlineLoops, type EdgeSegment, type LabeledRect } from '../geometry/rectilinear';
+import { buildGrid, extractEdges, mergeCollinear, offsetEdges, outlineLoops, type EdgeSegment, type LabeledRect } from '../geometry/rectilinear';
 import { createElement } from '../scene/factory';
 import { BuildingProgram, type BuildingProgramInput, type ProgramRoom, type RoomFunction } from './program';
 import { furnishRoom } from './furnish';
@@ -246,12 +246,27 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
         fn === 'bathroom' ? 'tile_grey' : fn === 'garage' || block?.garage ? 'concrete' : fn === 'terrace' ? 'wood_deck' : P.floorMaterial;
       for (const loop of loops) {
         if (loop.length < 3) continue;
+        // Extend slab edges that lie under exterior walls to the outer wall face.
+        const slabPoly = offsetEdges(
+          loop,
+          loop.map((p, i) => {
+            const q = loop[(i + 1) % loop.length];
+            const hit = ext.find((e) => {
+              if (!e.outward) return false;
+              const vertical = Math.abs(p.x - q.x) < 1e-9;
+              if (vertical !== (Math.abs(e.a.x - e.b.x) < 1e-9)) return false;
+              if (vertical) return Math.abs(e.a.x - p.x) < 1e-6 && Math.min(p.z, q.z) >= Math.min(e.a.z, e.b.z) - 1e-6 && Math.max(p.z, q.z) <= Math.max(e.a.z, e.b.z) + 1e-6;
+              return Math.abs(e.a.z - p.z) < 1e-6 && Math.min(p.x, q.x) >= Math.min(e.a.x, e.b.x) - 1e-6 && Math.max(p.x, q.x) <= Math.max(e.a.x, e.b.x) + 1e-6;
+            });
+            return hit?.outward ? { normal: hit.outward, d: P.wallThickness / 2 - 0.01 } : { normal: { x: 0, z: 0 }, d: 0 };
+          }),
+        ).map((v) => ({ x: round(v.x), z: round(v.z) }));
         add(
           createElement(scene, {
             type: 'slab',
             name: `${room ? room.name : block?.name ?? 'Floor'} floor${multiLevel ? ` · ${lvl.name}` : ''}`,
             levelId: lvl.id,
-            polygon: loop,
+            polygon: slabPoly,
             thickness: L === 0 ? 0.3 : 0.25,
             elevation: 0,
             material: floorMat,

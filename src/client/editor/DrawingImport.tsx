@@ -481,7 +481,9 @@ export function DrawingImportDialog() {
       const r = applyOperations(base, ops);
       if (!r.ok) return setError(r.errors.slice(0, 3).join(' · '));
       st.commitScene(r.scene, `Import ${loaded?.filename ?? 'drawing'}`);
-      st.addChat({ role: 'assistant', text: `Generated ${r.summary.toLowerCase()} from ${loaded?.filename ?? 'the drawing'} (scale: ${plan.unitsPerMeter.toFixed(1)} units/m via ${plan.scaleSource.replace('_', ' ')}).${warnings.length ? `\n\nNotes: ${warnings.join(' ')}` : ''}`, provider: 'drawing import', status: 'applied', summary: r.summary });
+      const counts = r.changes.filter((c) => c.kind === 'created').reduce<Record<string, number>>((a, c) => ((a[c.type] = (a[c.type] ?? 0) + 1), a), {});
+      const what = Object.entries(counts).map(([t, n]) => `${n} ${t}${n > 1 ? 's' : ''}`).join(', ');
+      st.addChat({ role: 'assistant', text: `Generated ${what} from ${loaded?.filename ?? 'the drawing'} (scale: ${plan.unitsPerMeter.toFixed(1)} units/m via ${plan.scaleSource.replace('_', ' ')}).${warnings.length ? `\n\nNotes: ${warnings.join(' ')}` : ''}`, provider: 'drawing import', status: 'applied', summary: r.summary });
       if (assetId) void api.saveAssetAnalysis(assetId, { plan, generatedAt: new Date().toISOString() });
       st.requestView('iso');
       setOpen(false);

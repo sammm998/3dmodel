@@ -93,8 +93,9 @@ export function Lighting() {
   return (
     <>
       <primitive object={target} />
+      {!realistic ? <color attach="background" args={['#15181d']} /> : null}
       {realistic ? (
-        <>
+        <group key="realistic-lighting">
           <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} />
           <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} />
           <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI]} />
@@ -116,14 +117,13 @@ export function Lighting() {
             target={target}
           />
           {settings.environment === 'night' ? <pointLight position={[center.x, 2.2, center.z]} intensity={20} distance={18} color="#ffcf94" /> : null}
-        </>
+        </group>
       ) : (
-        <>
-          <color attach="background" args={['#15181d']} />
+        <group key="modeling-lighting">
           <hemisphereLight args={['#eef2f7', '#3b3f46', 1.35]} />
           <directionalLight position={sunPos} intensity={1.6} castShadow shadow-mapSize-width={2048} shadow-mapSize-height={2048} shadow-bias={-0.0003} shadow-normalBias={0.03} shadow-camera-left={-radius * 1.3} shadow-camera-right={radius * 1.3} shadow-camera-top={radius * 1.3} shadow-camera-bottom={-radius * 1.3} shadow-camera-far={radius * 8} target={target} />
           <directionalLight position={[-sunPos.x, sunPos.y * 0.5, -sunPos.z]} intensity={0.45} />
-        </>
+        </group>
       )}
     </>
   );

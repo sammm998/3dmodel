@@ -236,3 +236,26 @@ export function simplifyLoop(loop: Vec2[]): Vec2[] {
   }
   return out;
 }
+
+/**
+ * Offsets selected edges of a simple polygon along given normals (per-edge
+ * distance, 0 = unchanged) and recomputes vertices as line intersections.
+ */
+export function offsetEdges(loop: Vec2[], offsets: { normal: Vec2; d: number }[]): Vec2[] {
+  const n = loop.length;
+  const lines = loop.map((p, i) => {
+    const q = loop[(i + 1) % n];
+    const o = offsets[i];
+    const shift = o && o.d ? { x: o.normal.x * o.d, z: o.normal.z * o.d } : { x: 0, z: 0 };
+    return { p: { x: p.x + shift.x, z: p.z + shift.z }, dir: { x: q.x - p.x, z: q.z - p.z } };
+  });
+  return loop.map((orig, i) => {
+    const a = lines[(i - 1 + n) % n];
+    const b = lines[i];
+    const den = a.dir.x * b.dir.z - a.dir.z * b.dir.x;
+    if (Math.abs(den) < 1e-12) return b.p;
+    const t = ((b.p.x - a.p.x) * b.dir.z - (b.p.z - a.p.z) * b.dir.x) / den;
+    void orig;
+    return { x: a.p.x + a.dir.x * t, z: a.p.z + a.dir.z * t };
+  });
+}

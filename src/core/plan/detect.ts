@@ -182,6 +182,18 @@ export function detectWallsFromRaster(gray: Uint8Array | Uint8ClampedArray, widt
       openings.push({ id: nid('ro'), type, wallId: id, t: (g0 + gw / 2 - m.a0) / L, width: gw, height: null, sillHeight: null, confidence: 0.5, source: 'raster' });
     }
   }
+  // Walls on the outer boundary of the drawing's wall extent are exterior.
+  if (walls.length) {
+    const xs = walls.flatMap((w) => [w.a.x, w.b.x]);
+    const ys = walls.flatMap((w) => [w.a.y, w.b.y]);
+    const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    const tol = thickness * 2;
+    for (const w of walls) {
+      const vertical = Math.abs(w.a.x - w.b.x) < 1e-6;
+      const c = vertical ? w.a.x : w.a.y;
+      if (vertical ? Math.abs(c - minX) < tol || Math.abs(c - maxX) < tol : Math.abs(c - minY) < tol || Math.abs(c - maxY) < tol) w.exterior = true;
+    }
+  }
   // Snap joints: extend to perpendicular centre-lines and weld coincident ends.
   const closed = weldEndpoints(extendToJoints(walls, thickness * 1.6), thickness * 0.8);
   return { walls: closed, openings, medianThicknessPx: thickness, threshold: thr };

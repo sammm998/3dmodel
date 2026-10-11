@@ -41,7 +41,8 @@ describe('raster wall detection', () => {
     // Calibrate: the room is 600 px = 6 m between outer faces → use centre-lines 588 px = 5.88 m
     const ppm = calibrate({ x: 100, y: 0 }, { x: 700, y: 0 }, 6);
     expect(ppm).toBeCloseTo(100);
-    const plan: FloorPlan = { width: W, height: H, unitsPerMeter: ppm, scaleSource: 'calibration', walls: r.walls.map((w) => ({ ...w, exterior: true })), openings: openingWidthsToMeters(r.openings, ppm), rooms: [{ id: 'r1', name: 'Kitchen', at: { x: 400, y: 300 }, confidence: 1 }], wallHeight: 2.7, defaultThickness: 0.2 };
+    expect(r.walls.every((w) => w.exterior)).toBe(true);
+    const plan: FloorPlan = { width: W, height: H, unitsPerMeter: ppm, scaleSource: 'calibration', walls: r.walls, openings: openingWidthsToMeters(r.openings, ppm), rooms: [{ id: 'r1', name: 'Kitchen', at: { x: 400, y: 300 }, confidence: 1 }], wallHeight: 2.7, defaultThickness: 0.2 };
     const { ops, warnings } = planToOperations(plan, { levelId: 'level_0' });
     const res = applyOperations(emptyScene(), ops);
     expect(res.errors).toEqual([]);
