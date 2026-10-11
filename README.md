@@ -32,7 +32,7 @@ npm run build && npm start          # http://localhost:3000   (or: npm run dev)
 ### Tests
 
 ```bash
-npm test               # 49 unit + integration tests (vitest)
+npm test               # 52 unit + integration tests (vitest)
 npm run test:e2e       # Playwright end-to-end acceptance test (builds must exist: npm run build)
 npm run typecheck && npm run lint
 ```
@@ -56,7 +56,7 @@ npm run typecheck && npm run lint
 | **Click-to-edit** | Real raycast picking, edge-outline highlight, name and dimension labels, a properties inspector, and multi-select (Shift). Selection context is sent to the AI. Edits outside the selection are flagged and need confirmation. |
 | **Operations engine** | `create` / `modify` (set, scale, add, translate, move along host, move normal, rotate) / `delete` / `delete_where` / `replace` / `set_material` / `define_material` / `set_level` / `add_level` / `generate_building` / `group`. Runs are transactional, validated, and produce diffs and a risk classification.<br>**Dependent updates:**<ul><li>joined walls stretch;</li><li>hosted openings follow their wall;</li><li>deleting a host cascades to its openings;</li><li>changing level height updates walls, roofs and stairs.</li></ul> |
 | **AI change preview** | Shows the list of changes with before → after per field, dependent updates, warnings, destructive and out-of-scope tags, and **Apply / Cancel / Refine** buttons. Simple in-scope edits can auto-apply with Undo (configurable). |
-| **AI providers** | Provider-agnostic (OpenAI chat-completions or any compatible endpoint, Anthropic Messages). Uses forced tool calling with a JSON schema generated from the same Zod schemas. Invalid operations are dropped and reported. Model output is never executed as code. |
+| **AI providers** | Provider-agnostic (OpenAI chat-completions or any compatible endpoint; Anthropic via the official SDK, default `claude-opus-5-5`, with server-side refusal fallback). Uses tool calling with a JSON schema generated from the same Zod schemas. Invalid operations are dropped and reported. Model output is never executed as code. |
 | **Built-in interpreter** | Deterministic English/Swedish parser for common modelling commands (dimensions, percentages, "by 50 cm", move left/right relative to the camera, materials and colours by slot, roof pitch/type, skylights, door types, replace, delete, furniture removal per room, ceiling height with proportional windows, add windows/doors/furniture). If a request is ambiguous it asks instead of guessing. |
 | **Voice** | Push-to-talk using the Web Speech API (sv-SE / en-US). Server STT (OpenAI transcription) when configured. Spoken replies through browser speech synthesis. Permission and error handling. |
 | **Drawing → 3D** | Accepts PNG/JPG/WebP, PDF (first page via pdf.js) and DXF. Includes:<ul><li>**two-point scale calibration** (dimensions are never guessed);</li><li>local CV wall detection (thick-line bands, gaps classified as door or window) and DXF parallel-line-pair detection;</li><li>optional vision-LLM analysis that also reads dimension strings and suggests a scale, which you must confirm;</li><li>low-confidence items shown dashed and listed for review;</li><li>a 2D editor to draw, select, drag endpoints, delete, add openings and label rooms;</li><li>generation into a replaced scene, the active level, or a new level.</li></ul> |

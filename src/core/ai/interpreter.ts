@@ -159,10 +159,14 @@ function capitalize(s: string) {
 // ---------------------------------------------------------------------------
 const GEN_VERBS = /\b(create|build|generate|design|model|make me|make a|draw|skapa|bygg|generera|rita|designa|modellera)\b/;
 const GEN_NOUNS =
-  /\b(room|house|home|villa|building|office|apartment|flat|cabin|kitchen|living ?room|bedroom|bathroom|studio|garage|rum|hus|villa|byggnad|kontor|kontorshus|lägenhet|stuga|kök|vardagsrum|sovrum|badrum|attefallshus)\b/;
+  /\b(room|house|home|villa|building|office|apartment|apartments|complex|block|flat|cabin|kitchen|living ?room|bedroom|bathroom|studio|garage|rum|hus|villa|byggnad|kontor|kontorshus|lägenhet|stuga|kök|vardagsrum|sovrum|badrum|attefallshus|flerbostadshus|hyreshus|bostadshus)\b/;
 
 function isGenerationRequest(lower: string, ctx: InterpretContext): boolean {
-  if (!GEN_VERBS.test(lower) || !GEN_NOUNS.test(lower)) return false;
+  if (!GEN_NOUNS.test(lower)) return false;
+  // A bare description ("5 floor apartment complex") with nothing selected and no
+  // edit verb is a request to build it.
+  const editVerb = /\b(make|change|move|rotate|delete|remove|replace|add|set|gör|ändra|flytta|rotera|ta bort|byt|lägg till|ersätt)\b/.test(lower);
+  if (!GEN_VERBS.test(lower) && (ctx.selectedIds.length || editVerb)) return false;
   // "add a window to this room" is an edit, not a generation.
   if (/\b(add|lägg till)\b/.test(lower) && /\b(window|door|skylight|fönster|dörr|takfönster)\b/.test(lower) && !/\b(with|med)\b/.test(lower)) return false;
   if (ctx.selectedIds.length && /\b(this|these|it|den här|detta|denna)\b/.test(lower) && !/\b(new|ny|nytt)\b/.test(lower)) return false;
@@ -176,7 +180,7 @@ export function parseBuildingProgram(lower: string): BuildingProgramInput {
   if (has(/\b(office|kontor|kontorshus|headquarters|workspace)\b/)) kind = 'office';
   else if (has(/\b(villa)\b/)) kind = 'villa';
   else if (has(/\b(cabin|stuga|attefallshus|cottage)\b/)) kind = 'cabin';
-  else if (has(/\b(apartment|flat|lägenhet)\b/)) kind = 'apartment';
+  else if (has(/\b(apartment|apartments|flat|flats|lägenhet|lägenheter|flerbostadshus|hyreshus)\b/)) kind = 'apartment';
   else if (has(/\b(house|home|hus|bostad)\b/)) kind = 'house';
   else if (has(/\b(living ?room|kitchen|bedroom|bathroom|vardagsrum|kök|sovrum|badrum|studio)\b/)) kind = 'interior';
   else if (has(/\b(room|rum)\b/)) kind = 'room';
@@ -212,8 +216,9 @@ export function parseBuildingProgram(lower: string): BuildingProgramInput {
     office: { w: 32, d: 18, f: 4, h: 3.5 },
     generic: { w: 12, d: 10, f: 1, h: 3 },
   };
-  const def = defaults[kind];
-  floors = floors ?? def.f;
+  floors = floors ?? defaults[kind].f;
+  // Multi-storey apartment buildings need a building-sized footprint.
+  const def = kind === 'apartment' && floors > 1 ? { w: 24, d: 13, f: floors, h: 2.8 } : defaults[kind];
   if (area && (!length || !width)) {
     const fp = area / floors;
     const aspect = 1.6;
@@ -265,7 +270,7 @@ export function parseBuildingProgram(lower: string): BuildingProgramInput {
 
   // ---- roof
   let roofType: 'none' | 'flat' | 'gable' | 'hip' | 'shed' =
-    kind === 'room' || kind === 'interior' || kind === 'apartment' ? 'none' : kind === 'office' ? 'flat' : kind === 'villa' ? 'flat' : 'gable';
+    kind === 'room' || kind === 'interior' || (kind === 'apartment' && floors <= 1) ? 'none' : kind === 'office' || kind === 'apartment' ? 'flat' : kind === 'villa' ? 'flat' : 'gable';
   if (has(/flat roof|platt tak|plant tak|flat-roof/)) roofType = 'flat';
   else if (has(/gable|pitched|saddle|sadeltak|sadel/)) roofType = 'gable';
   else if (has(/hip roof|hipped|valmat/)) roofType = 'hip';

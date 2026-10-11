@@ -84,3 +84,63 @@ describe('AI orchestration (mocked provider)', () => {
     await expect(runCommand('x', buildAiContext(scene, []), [])).rejects.toThrow(/401/);
   });
 });
+
+describe('Anthropic provider (mocked HTTP)', () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = 'test-key';
+    process.env.AI_PROVIDER = 'anthropic';
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.AI_PROVIDER;
+  });
+
+  it('uses auto tool_choice (forced tool use is rejected by current models) and parses the tool call', async () => {
+    let sent: any = null;
+    let headers: Headers | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        sent = JSON.parse(String(init.body));
+        headers = new Headers(init.headers);
+        return new Response(
+          JSON.stringify({
+            id: 'msg_1',
+            type: 'message',
+            role: 'assistant',
+            model: sent.model,
+            stop_reason: 'tool_use',
+            content: [{ type: 'tool_use', id: 'tu_1', name: 'propose_scene_operations', input: { message: 'ok', needsConfirmation: false, operations: [{ op: 'modify', id: win.id, set: { width: 1.8 } }] } }],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+    const r = await runCommand('make it wider', buildAiContext(scene, [win.id]), []);
+    expect(r.provider).toBe('anthropic');
+    expect(r.operations).toHaveLength(1);
+    expect(sent.model).toBe('claude-opus-5-5');
+    expect(sent.tool_choice.type).toBe('auto');
+    expect(sent.fallbacks).toBe('default');
+    expect(sent.tools[0].input_schema.type).toBe('object');
+    expect(JSON.stringify(sent.tools[0].input_schema)).not.toContain('"$schema"');
+    expect(headers!.get('anthropic-beta')).toContain('server-side-fallback-2026-07-01');
+  });
+
+  it('treats a text-only reply as a message without operations', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'Which window do you mean?' }], usage: { input_tokens: 1, output_tokens: 1 } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    const r = await runCommand('make it wider', buildAiContext(scene, []), []);
+    expect(r.operations).toHaveLength(0);
+    expect(r.message).toMatch(/Which window/);
+  });
+});

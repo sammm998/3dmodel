@@ -81,7 +81,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
   // A scene without elements is treated as fresh: its levels are re-initialised.
   const fresh = !opts.scene || opts.scene.elements.length === 0;
   if (fresh) scene.levels = scene.levels.slice(0, 1);
-  const interiorKind = P.kind === 'room' || P.kind === 'interior' || P.kind === 'apartment';
+  // A single-storey apartment is an interior; a multi-storey one is a building.
+  const interiorKind = P.kind === 'room' || P.kind === 'interior' || (P.kind === 'apartment' && Math.max(...P.blocks.map((b) => b.floors)) <= 1);
 
   // ---- centre blocks/rooms on origin (+ optional offset) -------------------
   const minX = Math.min(...P.blocks.map((b) => b.x));
@@ -765,6 +766,13 @@ function autoLayout(
   const perLevel: RoomFunction[][] = Array.from({ length: levelsOfMain }, () => []);
   if (P.kind === 'office') {
     for (let L = 0; L < levelsOfMain; L++) perLevel[L].push('office', 'office', 'bathroom');
+  } else if (P.kind === 'apartment' && levelsOfMain > 1) {
+    // Apartment building: one apartment layout repeated on every storey.
+    for (let L = 0; L < levelsOfMain; L++) {
+      perLevel[L].push('living', 'kitchen');
+      for (let i = 0; i < Math.max(1, prog.bedrooms); i++) perLevel[L].push('bedroom');
+      for (let i = 0; i < Math.max(1, prog.bathrooms); i++) perLevel[L].push('bathroom');
+    }
   } else {
     if (prog.living) perLevel[0].push('living');
     if (prog.kitchen) perLevel[0].push('kitchen');

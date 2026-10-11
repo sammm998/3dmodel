@@ -13,7 +13,14 @@ import { FurnitureKind } from '@/core/schema/elements';
 import type { AiContext } from '@/core/ai/context';
 import { getProvider, type LLMMessage } from './providers';
 
-const operationJsonSchema = zodToJsonSchema(Operation, { target: 'openApi3', $refStrategy: 'none' }) as Record<string, unknown>;
+/** JSON Schema for tool parameters (no $schema keys, no OpenAPI-only keywords). */
+function toToolSchema(schema: Parameters<typeof zodToJsonSchema>[0]): Record<string, unknown> {
+  const out = zodToJsonSchema(schema, { target: 'jsonSchema7', $refStrategy: 'none' }) as Record<string, unknown>;
+  delete out.$schema;
+  return out;
+}
+
+const operationJsonSchema = toToolSchema(Operation);
 
 export const PROPOSE_TOOL = {
   name: 'propose_scene_operations',
@@ -172,7 +179,7 @@ export type FloorPlanAnalysis = z.infer<typeof FloorPlanAnalysis>;
 const ANALYSIS_TOOL = {
   name: 'report_floor_plan',
   description: 'Report the structure detected in the architectural drawing in image pixel coordinates.',
-  parameters: zodToJsonSchema(FloorPlanAnalysis, { target: 'openApi3', $refStrategy: 'none' }) as Record<string, unknown>,
+  parameters: toToolSchema(FloorPlanAnalysis),
 };
 
 export async function analyzeDrawing(imageDataUrl: string, width: number, height: number, hint?: string): Promise<FloorPlanAnalysis & { provider: string; model: string }> {

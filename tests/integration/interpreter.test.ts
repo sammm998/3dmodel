@@ -116,3 +116,14 @@ describe('built-in interpreter + operation validation (acceptance flow)', () => 
     expect(w2.width / w2.height).toBeCloseTo(w.width / w.height, 3);
   });
 });
+
+describe('bare building descriptions', () => {
+  it('builds "5 floor apartment complex" without a verb', () => {
+    const { r, applied } = run(emptyScene(), '5 floor apartment complex');
+    expect(r.understood).toBe(true);
+    expect(applied.ok).toBe(true);
+    expect(applied.scene.levels).toHaveLength(5);
+    expect(applied.scene.elements.some((e) => e.type === 'roof')).toBe(true);
+    expect(applied.scene.elements.filter((e) => e.type === 'stair')).toHaveLength(4);
+  });
+});

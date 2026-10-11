@@ -82,7 +82,9 @@ export async function sendPrompt(prompt: string, opts: { voice?: boolean; images
     s.addChat({ role: 'assistant', text: `${proposal.message}\n\nI couldn't apply this: ${dry.errors.slice(0, 3).join(' · ')}`, provider: proposal.provider, status: 'failed' });
     return;
   }
-  const needsConfirm = proposal.needsConfirmation || dry.requiresConfirmation || !s.autoApplySimple;
+  // Building into an empty scene loses nothing (and is undoable): apply directly.
+  const intoEmptyScene = s.scene.elements.length === 0 && !dry.changes.some((c) => c.kind !== 'created');
+  const needsConfirm = !intoEmptyScene && (proposal.needsConfirmation || dry.requiresConfirmation || !s.autoApplySimple);
   if (!needsConfirm) {
     s.commitScene(dry.scene, truncate(prompt));
     s.addChat({ role: 'assistant', text: proposal.message, provider: proposal.provider, status: 'applied', summary: dry.summary + (dry.warnings.length ? ` · ${dry.warnings[0]}` : '') });

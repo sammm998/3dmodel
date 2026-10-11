@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 /**
  * Provider-agnostic LLM access with forced structured tool calls.
  *
@@ -108,35 +109,59 @@ class OpenAIProvider implements LLMProvider {
 
 class AnthropicProvider implements LLMProvider {
   id = 'anthropic' as const;
+  private client: Anthropic;
   constructor(
-    private key: string,
+    key: string,
     public model: string,
-  ) {}
+  ) {
+    this.client = new Anthropic({ apiKey: key, timeout: TIMEOUT_MS, maxRetries: 1 });
+  }
   async callTool(req: LLMRequest) {
-    const messages = req.messages.map((m) => {
-      const content: any[] = [];
+    const messages: Anthropic.Beta.BetaMessageParam[] = req.messages.map((m) => {
+      const content: Anthropic.Beta.BetaContentBlockParam[] = [];
       for (const url of m.images ?? []) {
-        const match = /^data:(image\/[a-z]+);base64,(.*)$/.exec(url);
-        if (match) content.push({ type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } });
+        const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,(.*)$/.exec(url);
+        if (match) content.push({ type: 'image', source: { type: 'base64', media_type: match[1] as 'image/png', data: match[2] } });
       }
       content.push({ type: 'text', text: m.text });
       return { role: m.role, content };
     });
-    const data = await post(
-      'https://api.anthropic.com/v1/messages',
-      { 'x-api-key': this.key, 'anthropic-version': '2023-06-01' },
-      {
+    const tool: Anthropic.Beta.BetaTool = {
+      name: req.tool.name,
+      description: req.tool.description,
+      input_schema: req.tool.parameters as Anthropic.Beta.BetaTool.InputSchema,
+    };
+    let response: Anthropic.Beta.BetaMessage;
+    try {
+      // Current Claude models reject forced tool_choice ("tool"/"any"): use auto and
+      // instruct the model to answer through the tool.
+      // Server-side refusal fallback: a declined request is re-run on a fallback model.
+      response = await this.client.beta.messages.create({
+        betas: ['server-side-fallback-2026-07-01'],
+        fallbacks: 'default',
         model: this.model,
-        max_tokens: req.maxTokens ?? 4096,
-        system: req.system,
+        max_tokens: Math.max(req.maxTokens ?? 8192, 8192),
+        system: `${req.system}\n\nAlways answer by calling the ${req.tool.name} tool exactly once.`,
         messages,
-        tools: [{ name: req.tool.name, description: req.tool.description, input_schema: req.tool.parameters }],
-        tool_choice: { type: 'tool', name: req.tool.name },
-      },
-    );
-    const block = (data?.content ?? []).find((b: any) => b.type === 'tool_use');
-    if (!block) throw new ProviderError('Model did not return a tool call');
-    return block.input;
+        tools: [tool],
+        tool_choice: { type: 'auto', disable_parallel_tool_use: true },
+        output_config: { effort: 'medium' },
+      } as unknown as Anthropic.Beta.MessageCreateParamsNonStreaming);
+    } catch (e) {
+      if (e instanceof Anthropic.APIError) throw new ProviderError(`Anthropic request failed (${e.status ?? 'network'}): ${e.message}`, e.status);
+      throw new ProviderError(`Anthropic request failed: ${(e as Error).message}`);
+    }
+    if (response.stop_reason === 'refusal') throw new ProviderError('The model declined this request');
+    const block = response.content.find((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === 'tool_use');
+    if (block) return block.input;
+    // No tool call: treat the text as a plain answer without operations.
+    const text = response.content
+      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('\n')
+      .trim();
+    if (!text) throw new ProviderError(`Model returned no tool call (stop_reason: ${response.stop_reason})`);
+    return { message: text, operations: [], needsConfirmation: false };
   }
 }
 
@@ -146,7 +171,7 @@ export function getProvider(): LLMProvider | null {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (pref === 'none') return null;
   if ((pref === 'anthropic' || (!pref && !openaiKey)) && anthropicKey) {
-    return new AnthropicProvider(anthropicKey, process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5');
+    return new AnthropicProvider(anthropicKey, process.env.ANTHROPIC_MODEL ?? 'claude-opus-5-5');
   }
   if ((pref === 'openai' || !pref) && openaiKey) {
     const model = process.env.OPENAI_MODEL ?? 'gpt-4.1';
