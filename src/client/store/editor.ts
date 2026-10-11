@@ -58,6 +58,9 @@ export interface EditorState {
   camera: CameraKind;
   viewRequest: { preset: ViewPreset; n: number } | null;
   walkMode: boolean;
+  /** Progressive path-traced rendering (realistic/presentation modes). */
+  pathTrace: boolean;
+  pathTraceSamples: number;
   showGrid: boolean;
   showLabels: boolean;
   snap: boolean;
@@ -119,6 +122,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   camera: 'perspective',
   viewRequest: null,
   walkMode: false,
+  pathTrace: false,
+  pathTraceSamples: 0,
   showGrid: true,
   showLabels: true,
   snap: true,

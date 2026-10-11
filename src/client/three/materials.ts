@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { resolveMaterial, type MaterialDef, type TexturePattern } from '@/core/materials/library';
 import type { CustomMaterial } from '@/core/schema/scene';
 
-export type RenderStyle = 'technical' | 'realistic';
+export type RenderStyle = 'technical' | 'realistic' | 'pathtrace';
 
 // ---- deterministic noise ---------------------------------------------------
 function mulberry32(seed: number) {
@@ -298,7 +298,7 @@ export class MaterialManager {
       });
     }
     if (def.id === 'water') {
-      const tex = texturesFor(def);
+      const tex = this.style === 'pathtrace' ? null : texturesFor(def);
       return new THREE.MeshPhysicalMaterial({
         name: def.id,
         color: def.color,
@@ -313,7 +313,8 @@ export class MaterialManager {
         envMapIntensity: 1.4,
       });
     }
-    const tex = texturesFor(def);
+    // Path tracing uses physically based colours without procedural textures.
+    const tex = this.style === 'pathtrace' ? null : texturesFor(def);
     const m = new THREE.MeshStandardMaterial({
       name: def.id,
       color: tex ? '#ffffff' : def.color,
