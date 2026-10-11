@@ -60,7 +60,7 @@ npm run typecheck && npm run lint
 | **Built-in interpreter** | Deterministic English/Swedish parser for common modelling commands (dimensions, percentages, "by 50 cm", move left/right relative to the camera, materials and colours by slot, roof pitch/type, skylights, door types, replace, delete, furniture removal per room, ceiling height with proportional windows, add windows/doors/furniture). If a request is ambiguous it asks instead of guessing. |
 | **Voice** | Push-to-talk using the Web Speech API (sv-SE / en-US). Server STT (OpenAI transcription) when configured. Spoken replies through browser speech synthesis. Permission and error handling. |
 | **Drawing → 3D** | Accepts PNG/JPG/WebP, PDF (first page via pdf.js) and DXF. Includes:<ul><li>**two-point scale calibration** (dimensions are never guessed);</li><li>local CV wall detection (thick-line bands, gaps classified as door or window) and DXF parallel-line-pair detection;</li><li>optional vision-LLM analysis that also reads dimension strings and suggests a scale, which you must confirm;</li><li>low-confidence items shown dashed and listed for review;</li><li>a 2D editor to draw, select, drag endpoints, delete, add openings and label rooms;</li><li>generation into a replaced scene, the active level, or a new level.</li></ul> |
-| **Rendering** | **Modeling** mode: technical materials, grid, room/area labels, dimensions.<br>**Realistic** mode: procedural PBR textures (oak, walnut, brick, concrete, marble, tiles, plaster, metal, …), sun with soft shadows, IBL reflections, N8AO ambient occlusion, SMAA.<br>**Presentation** mode: clean UI, saved viewpoints with animated transitions, high-resolution stills, and a **progressive GPU path tracer** (global illumination and true glass). |
+| **Rendering** | **Modeling** mode: technical materials, grid, room/area labels, dimensions.<br>**Realistic** mode: procedural PBR textures (oak, walnut, brick, concrete, marble, tiles, plaster, metal, …), sun with soft shadows, IBL reflections, N8AO ambient occlusion, SMAA.<br>**Presentation** mode: clean UI, saved viewpoints with animated transitions, and high-resolution PNG stills (up to 4× pixel ratio). |
 | **Viewport** | Orbit, pan and zoom; perspective/orthographic; 3D, top, front and side presets; WASD walkthrough with pointer lock; move/rotate/resize gizmos with grid and angle snapping that commit validated, undoable operations; vertex-snapping measure tool; fullscreen. |
 | **Projects** | Dashboard with four parametric starter projects, create/rename/delete, autosave (debounced, with retry), thumbnails, undo/redo (150 steps), named versions with restore, read-only share links, uploaded drawings kept in object storage. |
 | **Export** | **GLB** (textured or lightweight; one named node per element with `extras.elementId`), **OBJ + MTL**, **STL** (m or mm), **IFC4**, **DXF** plans, **PNG**. Server-side export endpoint: `GET /api/projects/:id/export?format=glb|obj|mtl|stl|ifc|dxf`. |
@@ -104,10 +104,10 @@ npm run typecheck && npm run lint
   * Walls are straight segments; there are no arcs or splines.
   * Joins extend centre-lines, which is good for L and T junctions but has no mitering for acute angles.
   * Skylights sit on the roof surface without cutting it.
-* **Rendering:**
-  * Realistic mode is a real-time rasterizer (approximate GI via AO and IBL).
-  * The path tracer is the "final render" option. It runs in the browser on the user's GPU and converges over seconds to minutes.
-  * There is no Blender/Cycles server pipeline.
+* **Rendering — no offline photorealistic renderer yet.**
+  * Realistic and Presentation modes are a real-time rasterizer: PBR, shadows, IBL and AO, so GI is approximate.
+  * I integrated a browser path tracer (three-gpu-pathtracer 0.0.24) but removed it: with three r180 it assigned materials to the wrong meshes, and I would not ship a visibly broken render.
+  * The intended path is either a newer three + three-gpu-pathtracer, or a server-side Blender/Cycles job that consumes the GLB export (which already carries geometry, materials and element names).
 * **Not implemented yet:**
   * multi-user accounts and authentication (share links are capability URLs);
   * real-time collaboration;
@@ -135,7 +135,7 @@ src/
     ai/                     provider-agnostic LLM client (OpenAI / Anthropic), orchestrator, STT/TTS
   client/                   React UI
     store/editor.ts         Zustand store: scene, snapshot undo/redo, selection, modes, chat, proposals
-    three/                  R3F viewport, scene objects, materials (procedural textures), gizmo, path tracer
+    three/                  R3F viewport, scene objects, materials (procedural textures), gizmo, lighting
     editor/                 Editor shell, sidebars, inspector, assistant, drawing import, dialogs
     ai/                     assistant flow (LLM → fallback → dry-run → apply/preview), voice input
   app/                      Next.js App Router pages + REST API
@@ -161,6 +161,6 @@ tests/                      unit, integration (exports validated by external too
 * **No Redis or job queue.** Every long operation (LLM calls, analysis) is request-scoped, and rendering happens on the client. A queue becomes necessary if a server-side render farm is added.
 * **Local object storage** behind an interface (`ObjectStorage`). An S3 adapter is a drop-in.
 * **shadcn/ui-style components** written directly on Radix primitives, the same approach as the shadcn CLI, kept in `src/client/ui`.
-* **In-browser path tracing instead of Blender.** It can be verified here, works on the user's GPU, and needs no server infrastructure. A Blender pipeline can consume the GLB export.
+* **No offline render pipeline yet** (see limitations). Blender is not available in this environment, so I did not add code I could not verify.
 
 See `docs/ARCHITECTURE.md` for the schema, the operation language and the drawing pipeline in detail.

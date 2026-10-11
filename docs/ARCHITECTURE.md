@@ -141,6 +141,6 @@ ops → client dry-run (applyOperations) → auto-apply (simple, in scope) | pre
 | --- | --- |
 | Modeling | Technical, untextured materials; grid, axes, room/area labels; fast interaction |
 | Realistic | Procedural PBR textures, sun and hemisphere light, 4k soft shadows, procedural IBL (RoomEnvironment), N8AO, SMAA, gradient sky |
-| Presentation | UI hidden; saved viewpoints with eased transitions; PNG stills at up to 4× pixel ratio; progressive **path tracing** (three-gpu-pathtracer) with an equirectangular sky environment |
+| Presentation | UI hidden; saved viewpoints with eased transitions; PNG stills at up to 4× pixel ratio |
 
-Live preview means rasterisation, which is interactive and approximate. The path tracer is physically based and converges over time. It is the in-app equivalent of an offline render.
+All modes are real-time rasterisation, which is interactive and approximate. A physically based offline render (path tracing or Blender/Cycles fed by the GLB export) is not implemented yet; see the README limitations.

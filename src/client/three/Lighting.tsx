@@ -71,7 +71,6 @@ export function Lighting() {
   const scene = useEditor((s) => s.scene);
   const { gl } = useThree();
   const realistic = viewMode !== 'modeling';
-  const pathTrace = useEditor((s) => s.pathTrace) && realistic;
   const preset = ENV_PRESETS[settings.environment];
 
   const b = useMemo(() => sceneBounds(scene), [scene]);
@@ -97,8 +96,8 @@ export function Lighting() {
       {!realistic ? <color attach="background" args={['#15181d']} /> : null}
       {realistic ? (
         <group key="realistic-lighting">
-          {!pathTrace ? <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} /> : null}
-          {!pathTrace ? <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} /> : null}
+          <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} />
+          <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} />
           <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI]} />
           <directionalLight
             position={sunPos}

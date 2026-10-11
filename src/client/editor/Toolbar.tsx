@@ -1,5 +1,5 @@
 'use client';
-import { Aperture, Box, Camera, Download, Eye, Footprints, Grid3x3, Magnet, Maximize, Move, MousePointer2, Palette, Redo2, RotateCw, Ruler, Save, Scaling, Undo2 } from 'lucide-react';
+import { Box, Camera, Download, Eye, Footprints, Grid3x3, Magnet, Maximize, Move, MousePointer2, Palette, Redo2, RotateCw, Ruler, Save, Scaling, Undo2 } from 'lucide-react';
 import { useEditor, type Tool, type ViewPreset } from '../store/editor';
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, IconButton, Separator, Tooltip } from '../ui/primitives';
 import { MaterialGrid } from './MaterialPicker';
@@ -96,21 +96,9 @@ export function ViewControls() {
   const gridSize = useEditor((s) => s.gridSize);
   const walk = useEditor((s) => s.walkMode);
   const viewMode = useEditor((s) => s.viewMode);
-  const pathTrace = useEditor((s) => s.pathTrace);
-  const samples = useEditor((s) => s.pathTraceSamples);
   const st = useEditor.getState;
   return (
     <div className="glass pointer-events-auto flex items-center gap-0.5 rounded-xl px-1 py-1">
-      {viewMode !== 'modeling' ? (
-        <>
-          <Tooltip content="Path-traced render: global illumination, soft shadows and true glass. Converges over a few seconds; any camera move restarts it.">
-            <Button variant="ghost" size="sm" className={cn('h-7 gap-1 px-2 text-[11px] text-ink-300', pathTrace && 'bg-accent-soft text-accent')} onClick={() => st().set({ pathTrace: !pathTrace, pathTraceSamples: 0 })} data-testid="pathtrace">
-              <Aperture className="h-3.5 w-3.5" /> {pathTrace ? `Path tracing · ${samples} spp` : 'Path trace'}
-            </Button>
-          </Tooltip>
-          <Separator vertical />
-        </>
-      ) : null}
       {PRESETS.map((p) => (
         <Button key={p.id} variant="ghost" size="sm" className="h-7 px-2 text-[11px] text-ink-300" onClick={() => st().requestView(p.id)}>
           {p.label}

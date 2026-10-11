@@ -12,7 +12,6 @@ import { CameraRig } from './CameraRig';
 import { Lighting } from './Lighting';
 import { MaterialManager } from './materials';
 import { objectRegistry, viewportHandles } from './registry';
-import { PathTracerRenderer } from './PathTracer';
 import { elementAnchor, findElement } from '@/core/scene/query';
 
 function Handles() {
@@ -63,8 +62,7 @@ function Handles() {
 
 function Effects() {
   const viewMode = useEditor((s) => s.viewMode);
-  const pathTrace = useEditor((s) => s.pathTrace);
-  if (viewMode === 'modeling' || pathTrace) return null;
+  if (viewMode === 'modeling') return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO halfRes aoRadius={0.9} intensity={2.2} distanceFalloff={0.6} quality="medium" />
@@ -81,9 +79,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const activeLevelId = useEditor((s) => s.activeLevelId);
   const levels = useEditor((s) => s.scene.levels);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pathTrace = useEditor((s) => s.pathTrace) && viewMode !== 'modeling';
-  const pathTraceOn = useEditor((s) => s.pathTrace);
-  const style = viewMode === 'modeling' ? 'technical' : pathTraceOn ? 'pathtrace' : 'realistic';
+  const style = viewMode === 'modeling' ? 'technical' : 'realistic';
   const materials = useMemo(() => new MaterialManager(style, customMaterials), [style, customMaterials]);
   useEffect(() => () => materials.dispose(), [materials]);
   useEffect(() => {
@@ -113,16 +109,12 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
         <Suspense fallback={null}>
           <SceneObjects materials={materials} interactive={interactive} />
         </Suspense>
-        {interactive && !pathTrace ? <GroundCatcher /> : null}
-        {!pathTrace ? (
-          <>
-            <SelectionOutlines />
-            <SelectionLabels />
-            <RoomLabels />
-            <MeasureOverlay />
-            {interactive ? <TransformGizmo /> : null}
-          </>
-        ) : null}
+        {interactive ? <GroundCatcher /> : null}
+        <SelectionOutlines />
+        <SelectionLabels />
+        <RoomLabels />
+        <MeasureOverlay />
+        {interactive ? <TransformGizmo /> : null}
         {showGrid && viewMode === 'modeling' ? (
           <Grid
             position={[0, gridY, 0]}
@@ -139,8 +131,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
           />
         ) : null}
         {viewMode === 'modeling' ? <axesHelper args={[1.2]} position={[0, 0.003, 0]} /> : null}
-        {pathTrace ? <PathTracerRenderer /> : null}
-        {viewMode !== 'presentation' && !pathTrace ? (
+        {viewMode !== 'presentation' ? (
           <GizmoHelper alignment="bottom-right" margin={[72, 92]}>
             <GizmoViewport axisColors={['#e06c75', '#98c379', '#61afef']} labelColor="#0b0d10" />
           </GizmoHelper>
