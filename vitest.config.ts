@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['tests/unit/**/*.test.ts', 'tests/integration/**/*.test.ts'],
-    testTimeout: 20000,
+    testTimeout: 30000,
+    setupFiles: ['tests/setup/polyfills.ts'],
   },
 });

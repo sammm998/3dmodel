@@ -694,7 +694,7 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
         center: { x: round(cx), z: round(cz) },
         width: round(size),
         depth: round(size),
-        elevation: -0.31,
+        elevation: -0.15,
         material: 'grass',
       }),
     );
