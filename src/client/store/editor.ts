@@ -67,6 +67,7 @@ export interface EditorState {
 
   chat: ChatMessage[];
   aiBusy: boolean;
+  aiBusySince: number;
   pending: PendingProposal | null;
   autoApplySimple: boolean;
   aiMode: 'auto' | 'rules';
@@ -128,6 +129,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 
   chat: [],
   aiBusy: false,
+  aiBusySince: 0,
   pending: null,
   autoApplySimple: true,
   aiMode: 'auto',

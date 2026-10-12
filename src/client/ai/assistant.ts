@@ -15,6 +15,14 @@ interface Proposal {
   note?: string;
 }
 
+const LLM_TIMEOUT_MS = 75_000;
+let llmAbort: AbortController | null = null;
+
+/** Stops a running LLM request; the built-in interpreter answers instead. */
+export function cancelLLM() {
+  llmAbort?.abort('cancel');
+}
+
 async function callLLM(prompt: string, images: string[]): Promise<Proposal> {
   const st = editor();
   const context = buildAiContext(st.scene, st.selection, { activeLevelId: st.activeLevelId, view: st.viewVectors });
@@ -22,7 +30,18 @@ async function callLLM(prompt: string, images: string[]): Promise<Proposal> {
     .filter((m) => m.role !== 'system')
     .slice(-8)
     .map((m) => ({ role: m.role as 'user' | 'assistant', text: m.text }));
-  const res = await fetch('/api/ai/command', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt, context, history, images }) });
+  const ctrl = new AbortController();
+  llmAbort = ctrl;
+  const timer = setTimeout(() => ctrl.abort(), LLM_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch('/api/ai/command', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ prompt, context, history, images }), signal: ctrl.signal });
+  } catch (e) {
+    throw new Error((e as Error).name === 'AbortError' ? (ctrl.signal.reason === 'cancel' ? 'cancelled' : `no answer within ${LLM_TIMEOUT_MS / 1000} s`) : (e as Error).message);
+  } finally {
+    clearTimeout(timer);
+    llmAbort = null;
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.message ?? data.error ?? `AI request failed (${res.status})`);
   return { provider: `${data.provider} · ${data.model}`, message: data.message, operations: data.operations, needsConfirmation: data.needsConfirmation, clarifyingQuestion: data.clarifyingQuestion, invalidOperations: data.invalidOperations };
@@ -47,7 +66,7 @@ export async function sendPrompt(prompt: string, opts: { voice?: boolean; images
   if (!prompt.trim() || st.aiBusy) return;
   if (st.pending) cancelPending('Superseded by a new request');
   st.addChat({ role: 'user', text: prompt, voice: opts.voice });
-  st.set({ aiBusy: true });
+  st.set({ aiBusy: true, aiBusySince: Date.now() });
   const scopeIds = [...st.selection];
   let proposal: Proposal;
   try {

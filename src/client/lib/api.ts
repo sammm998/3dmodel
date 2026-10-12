@@ -1,8 +1,17 @@
 import type { Scene } from '@/core/schema/scene';
 import type { AssetRecord, ChatMessage, ProjectRecord, ProjectSummary, VersionRecord } from '@/server/storage/types';
 
-async function req<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { ...init, headers: { ...(init?.body && !(init.body instanceof FormData) ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) } });
+async function req<T>(url: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, signal: ctrl.signal, headers: { ...(init?.body && !(init.body instanceof FormData) ? { 'content-type': 'application/json' } : {}), ...(init?.headers ?? {}) } });
+  } catch (e) {
+    throw new Error((e as Error).name === 'AbortError' ? `The server did not respond within ${timeoutMs / 1000} s (${url}). Check /api/health.` : `Network error: ${(e as Error).message}`);
+  } finally {
+    clearTimeout(timer);
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const err = new Error((data as { message?: string; error?: string }).message ?? (data as { error?: string }).error ?? `Request failed (${res.status})`) as Error & { status?: number; code?: string };

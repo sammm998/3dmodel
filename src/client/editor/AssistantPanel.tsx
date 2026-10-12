@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { applyPending, cancelPending, sendPrompt } from '../ai/assistant';
+import { applyPending, cancelLLM, cancelPending, sendPrompt } from '../ai/assistant';
 import { useVoiceInput } from '../ai/voice';
 import { Badge, Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, IconButton, Spinner, Switch, Tooltip } from '../ui/primitives';
 import { cn } from '../lib/utils';
@@ -208,6 +208,27 @@ function StatusLine({ status, summary }: { status?: string; summary?: string }) 
   );
 }
 
+function BusyIndicator({ label }: { label: string }) {
+  const since = useEditor((s) => s.aiBusySince);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.round((now - since) / 1000));
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-accent/20 bg-accent/[0.05] px-2.5 py-2 text-[12px] text-ink-200" data-testid="ai-busy">
+      <Spinner className="h-3.5 w-3.5 text-accent" />
+      <span className="flex-1">
+        {label}… <span className="font-mono text-ink-400">{secs} s</span>
+      </span>
+      <button className="rounded px-1.5 py-0.5 text-[11px] text-ink-300 hover:bg-white/5 hover:text-ink-100" onClick={cancelLLM}>
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 export function AssistantPanel() {
   const chat = useEditor((s) => s.chat);
   const busy = useEditor((s) => s.aiBusy);
@@ -347,11 +368,7 @@ export function AssistantPanel() {
             </div>
           ),
         )}
-        {busy ? (
-          <div className="flex items-center gap-2 text-[12px] text-ink-300">
-            <Spinner className="h-3.5 w-3.5" /> Interpreting request…
-          </div>
-        ) : null}
+        {busy ? <BusyIndicator label={usingLLM ? `${aiInfo?.model ?? 'AI'} is working on it` : 'Interpreting request'} /> : null}
       </div>
 
       <ProposalCard

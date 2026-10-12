@@ -145,7 +145,8 @@ class AnthropicProvider implements LLMProvider {
         messages,
         tools: [tool],
         tool_choice: { type: 'auto', disable_parallel_tool_use: true },
-        output_config: { effort: 'medium' },
+        // Interactive modelling commands: keep latency low.
+        output_config: { effort: 'low' },
       } as unknown as Anthropic.Beta.MessageCreateParamsNonStreaming);
     } catch (e) {
       if (e instanceof Anthropic.APIError) throw new ProviderError(`Anthropic request failed (${e.status ?? 'network'}): ${e.message}`, e.status);

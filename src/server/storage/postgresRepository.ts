@@ -82,7 +82,10 @@ export class PostgresRepository implements Repository {
   constructor(private pool: Pool) {}
 
   static fromUrl(url: string) {
-    return new PostgresRepository(new Pool({ connectionString: url, max: 10 }));
+    // Fail fast instead of hanging requests when the database is unreachable.
+    return new PostgresRepository(
+      new Pool({ connectionString: url, max: 10, connectionTimeoutMillis: 10_000, idleTimeoutMillis: 30_000, statement_timeout: 20_000, query_timeout: 25_000 }),
+    );
   }
 
   /** Applies idempotent migrations once per process. */

@@ -341,6 +341,20 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   const openExport = useCallback(() => setExportOpen(true), []);
   useShortcuts(save, openExport);
 
+  // Surface unexpected client errors instead of failing silently.
+  useEffect(() => {
+    const onError = (e: ErrorEvent | PromiseRejectionEvent) => {
+      const msg = 'reason' in e ? String((e.reason as Error)?.message ?? e.reason) : e.message;
+      if (msg && !/ResizeObserver/.test(msg)) useEditor.getState().notify(`Something went wrong: ${msg}`, 'danger');
+    };
+    window.addEventListener('error', onError);
+    window.addEventListener('unhandledrejection', onError);
+    return () => {
+      window.removeEventListener('error', onError);
+      window.removeEventListener('unhandledrejection', onError);
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
