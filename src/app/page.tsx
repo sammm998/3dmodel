@@ -62,7 +62,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
-  const [health, setHealth] = useState<{ storage: string; storageOk?: boolean; storageError?: string | null; ai: { configured: boolean; provider: string | null; model: string | null } } | null>(null);
+  const [health, setHealth] = useState<{ storage: string; storageOk?: boolean; storageError?: string | null; databaseFallbackReason?: string | null; storagePersistent?: boolean; ai: { configured: boolean; provider: string | null; model: string | null } } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = () =>
@@ -167,8 +167,13 @@ export default function Dashboard() {
             {busy ? <div className="mt-3 flex items-center justify-center gap-2 text-[12px] text-ink-300" data-testid="home-busy"><Loader2 className="h-3.5 w-3.5 animate-spin text-accent" /> Creating project…</div> : null}
             {error ? <div className="mt-3 text-[12px] text-danger" data-testid="home-error">{error}</div> : null}
             {health && health.storageOk === false ? (
-              <div className="mx-auto mt-3 max-w-xl rounded-lg border border-danger/30 bg-danger/[0.08] px-3 py-2 text-left text-[12px] text-danger">
-                The server cannot reach its database, so projects cannot be created or saved. Check DATABASE_URL on the server. Details: {health.storageError}
+              <div className="mx-auto mt-3 max-w-xl rounded-lg border border-danger/30 bg-danger/[0.08] px-3 py-2 text-left text-[12px] text-danger" data-testid="storage-error">
+                Projects cannot be saved right now: {health.storageError || 'storage is not writable'}
+              </div>
+            ) : health && (health.databaseFallbackReason || health.storagePersistent === false) ? (
+              <div className="mx-auto mt-3 max-w-xl rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2 text-left text-[12px] leading-relaxed text-warn" data-testid="storage-warning">
+                {health.databaseFallbackReason ? <div>The database is not reachable, so projects are stored on the server&apos;s disk instead. Reason: {health.databaseFallbackReason}</div> : null}
+                {health.storagePersistent === false ? <div>Projects saved on the server&apos;s disk are lost when the app is redeployed. Add a volume (mount path <span className="font-mono">/app/data</span>) or a PostgreSQL database to keep them.</div> : null}
               </div>
             ) : null}
           </section>

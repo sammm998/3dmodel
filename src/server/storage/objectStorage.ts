@@ -37,6 +37,6 @@ export class LocalObjectStorage implements ObjectStorage {
 
 let storage: ObjectStorage | null = null;
 export function getObjectStorage(): ObjectStorage {
-  if (!storage) storage = new LocalObjectStorage(process.env.OBJECT_STORAGE_DIR ?? path.join(process.cwd(), 'data', 'objects'));
+  if (!storage) storage = new LocalObjectStorage(process.env.OBJECT_STORAGE_DIR ?? path.join(process.env.DATA_DIR ?? process.env.RAILWAY_VOLUME_MOUNT_PATH ?? path.join(process.cwd(), 'data'), 'objects'));
   return storage;
 }

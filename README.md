@@ -29,10 +29,19 @@ npm run build && npm start          # http://localhost:3000   (or: npm run dev)
 
   The UI always shows which interpreter answered.
 
+### Deploying (e.g. Railway)
+
+* **Start command:** `npm start`, which listens on `$PORT`. `railway.json` already configures the build, the start command and a health check on `/api/health`.
+* **No external database is needed.** Without `DATABASE_URL`, projects are stored as files.
+  * On Railway, add a **Volume** with mount path `/app/data` (or set `DATA_DIR`) so projects survive redeploys.
+  * Without a volume, the home page warns that projects are lost on each redeploy.
+* **Optional PostgreSQL.** In Railway, use *New → Database → PostgreSQL* and set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the app service. Do not use the `localhost` value from `.env.example`.
+* **If `DATABASE_URL` is set but unreachable,** the app falls back to file storage instead of failing. The reason is shown on the home page and in `/api/health`.
+
 ### Tests
 
 ```bash
-npm test               # 52 unit + integration tests (vitest)
+npm test               # 54 unit + integration tests (vitest)
 npm run test:e2e       # Playwright end-to-end acceptance test (builds must exist: npm run build)
 npm run typecheck && npm run lint
 ```
