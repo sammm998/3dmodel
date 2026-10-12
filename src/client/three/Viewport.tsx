@@ -1,8 +1,8 @@
 'use client';
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useThree } from '@react-three/fiber';
-import { GizmoHelper, GizmoViewport, Grid, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
+import { GizmoHelper, GizmoViewport, Grid, OrthographicCamera, PerformanceMonitor, PerspectiveCamera } from '@react-three/drei';
 import { EffectComposer, N8AO, SMAA } from '@react-three/postprocessing';
 import { useEditor } from '../store/editor';
 import { SceneObjects } from './SceneObjects';
@@ -60,9 +60,10 @@ function Handles() {
   return null;
 }
 
-function Effects() {
+function Effects({ lowPerf }: { lowPerf: boolean }) {
   const viewMode = useEditor((s) => s.viewMode);
-  if (viewMode === 'modeling') return null;
+  // Ambient occlusion is the most expensive pass: drop it when the frame rate struggles.
+  if (viewMode === 'modeling' || lowPerf) return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO halfRes aoRadius={0.9} intensity={2.2} distanceFalloff={0.6} quality="medium" />
@@ -79,19 +80,26 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const activeLevelId = useEditor((s) => s.activeLevelId);
   const levels = useEditor((s) => s.scene.levels);
   const containerRef = useRef<HTMLDivElement>(null);
+  const walkMode = useEditor((s) => s.walkMode);
+  // Adaptive quality: resolution and AO follow the measured frame rate.
+  const [dpr, setDpr] = useState(() => (typeof window === 'undefined' ? 1 : Math.min(1.5, window.devicePixelRatio || 1)));
+  const [lowPerf, setLowPerf] = useState(false);
   const style = viewMode === 'modeling' ? 'technical' : 'realistic';
-  const materials = useMemo(() => new MaterialManager(style, customMaterials), [style, customMaterials]);
+  // Keyed on content, not identity: every edit clones the scene, which must not rebuild all materials.
+  const customKey = JSON.stringify(customMaterials);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const materials = useMemo(() => new MaterialManager(style, customMaterials), [style, customKey]);
   useEffect(() => () => materials.dispose(), [materials]);
   useEffect(() => {
     viewportHandles.container = containerRef.current;
   }, []);
-  const gridY = (levels.find((l) => l.id === activeLevelId)?.elevation ?? 0) + 0.002;
+  const gridY = (levels.find((l) => l.id === activeLevelId)?.elevation ?? 0) + 0.006;
 
   return (
     <div ref={containerRef} className="absolute inset-0" data-testid="viewport">
       <Canvas
         shadows={{ type: THREE.PCFSoftShadowMap }}
-        dpr={[1, 2]}
+        dpr={dpr}
         gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance', logarithmicDepthBuffer: false }}
         onPointerMissed={(e) => {
           if (!interactive) return;
@@ -100,21 +108,25 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
         }}
       >
         {cameraKind === 'perspective' ? (
-          <PerspectiveCamera makeDefault position={[14, 10, 16]} fov={45} near={0.05} far={6000} />
+          <PerspectiveCamera makeDefault position={[14, 10, 16]} fov={45} near={0.1} far={2500} />
         ) : (
-          <OrthographicCamera makeDefault position={[14, 10, 16]} zoom={40} near={-1000} far={6000} />
+          <OrthographicCamera makeDefault position={[14, 10, 16]} zoom={40} near={-1000} far={2500} />
         )}
         <CameraRig />
         <Lighting />
         <Suspense fallback={null}>
-          <SceneObjects materials={materials} interactive={interactive} />
+          <SceneObjects materials={materials} interactive={interactive && !walkMode} />
         </Suspense>
-        {interactive ? <GroundCatcher /> : null}
-        <SelectionOutlines />
-        <SelectionLabels />
-        <RoomLabels />
-        <MeasureOverlay />
-        {interactive ? <TransformGizmo /> : null}
+        {interactive && !walkMode ? <GroundCatcher /> : null}
+        {!walkMode ? (
+          <>
+            <SelectionOutlines />
+            <SelectionLabels />
+            <RoomLabels />
+            <MeasureOverlay />
+            {interactive ? <TransformGizmo /> : null}
+          </>
+        ) : null}
         {showGrid && viewMode === 'modeling' ? (
           <Grid
             position={[0, gridY, 0]}
@@ -131,12 +143,27 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
           />
         ) : null}
         {viewMode === 'modeling' ? <axesHelper args={[1.2]} position={[0, 0.003, 0]} /> : null}
-        {viewMode !== 'presentation' ? (
+        {viewMode !== 'presentation' && !walkMode ? (
           <GizmoHelper alignment="bottom-right" margin={[72, 92]}>
             <GizmoViewport axisColors={['#e06c75', '#98c379', '#61afef']} labelColor="#0b0d10" />
           </GizmoHelper>
         ) : null}
-        <Effects />
+        <Effects lowPerf={lowPerf} />
+        <PerformanceMonitor
+          onIncline={() => {
+            setDpr(Math.min(2, window.devicePixelRatio || 1));
+            setLowPerf(false);
+          }}
+          onDecline={() => {
+            setDpr(1);
+            setLowPerf(true);
+          }}
+          flipflops={3}
+          onFallback={() => {
+            setDpr(1);
+            setLowPerf(true);
+          }}
+        />
         <Handles />
       </Canvas>
     </div>

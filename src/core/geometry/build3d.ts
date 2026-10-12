@@ -24,6 +24,7 @@ import type {
 } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import { computeWallExtensions, findElement, levelOf, wallFrame } from '../scene/query';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { boxGeometry, orientOutward, polygonsGeometry, prismPolygons } from './primitives';
 
 export type MaterialFn = (ref: string) => THREE.Material;
@@ -45,9 +46,13 @@ const tag = (obj: THREE.Object3D, id: string) => {
   obj.userData.elementId = id;
   obj.traverse((c) => {
     c.userData.elementId = id;
-    if ((c as THREE.Mesh).isMesh) {
-      c.castShadow = true;
-      c.receiveShadow = true;
+    const m = c as THREE.Mesh;
+    if (m.isMesh) {
+      // Glass and water let light through: they must not cast solid shadows.
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      const glassy = mats.every((x) => (x as THREE.MeshPhysicalMaterial).transmission > 0 || (x.transparent && x.opacity < 0.9));
+      m.castShadow = !glassy;
+      m.receiveShadow = true;
     }
   });
   return obj;
@@ -130,6 +135,7 @@ export function buildElementObject(el: Element, ctx: BuildContext): THREE.Object
     }
   }
   if (!obj) return null;
+  if (el.type !== 'room') obj = mergeByMaterial(obj);
   obj.name = el.name;
   if (el.type === 'room') {
     obj.userData.elementId = el.id;
@@ -137,6 +143,59 @@ export function buildElementObject(el: Element, ctx: BuildContext): THREE.Object
     return obj;
   }
   return tag(obj, el.id);
+}
+
+const KEEP_ATTRS = new Set(['position', 'normal', 'uv']);
+
+/**
+ * Bakes an element's many small parts into one mesh per material. Keeps the
+ * element's root transform, so picking, gizmos and outlines work unchanged,
+ * while draw calls drop by an order of magnitude (smoother viewport).
+ */
+export function mergeByMaterial(root: THREE.Object3D): THREE.Object3D {
+  const meshes: THREE.Mesh[] = [];
+  let mergeable = true;
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    if (Array.isArray(m.material) || m.userData.helper) mergeable = false;
+    meshes.push(m);
+  });
+  if (!mergeable || meshes.length <= 1) return root;
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const buckets = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; shadow: boolean }>();
+  for (const m of meshes) {
+    const src = m.geometry as THREE.BufferGeometry;
+    const g = src.index ? src.toNonIndexed() : src.clone();
+    g.clearGroups();
+    for (const name of Object.keys(g.attributes)) if (!KEEP_ATTRS.has(name)) g.deleteAttribute(name);
+    if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((g.attributes.position.count * 2)), 2));
+    if (!g.attributes.normal) g.computeVertexNormals();
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, m.matrixWorld));
+    const mat = m.material as THREE.Material;
+    const b = buckets.get(mat) ?? { geos: [], shadow: false };
+    b.geos.push(g);
+    if (m.castShadow !== false) b.shadow = true;
+    buckets.set(mat, b);
+    src.dispose();
+  }
+  const out = new THREE.Group();
+  out.position.copy(root.position);
+  out.quaternion.copy(root.quaternion);
+  out.scale.copy(root.scale);
+  for (const [mat, b] of buckets) {
+    const merged = mergeGeometries(b.geos, false);
+    for (const g of b.geos) g.dispose();
+    if (!merged) continue;
+    const mesh = new THREE.Mesh(merged, mat);
+    mesh.name = mat.name;
+    const glassy = (mat as THREE.MeshPhysicalMaterial).transmission > 0 || (mat.transparent && mat.opacity < 0.9);
+    mesh.castShadow = b.shadow && !glassy;
+    mesh.receiveShadow = true;
+    out.add(mesh);
+  }
+  return out;
 }
 
 /** Builds every visible element into one group (used by exporters). */
@@ -262,12 +321,13 @@ function buildWindow(el: WindowElement, ctx: BuildContext, y0: number): THREE.Ob
   if (!hf) return null;
   const frame = ctx.material(el.frameMaterial);
   const glass = ctx.material(el.glazingMaterial);
-  const w = el.width;
-  const h = el.height;
+  // Inset 2 mm from the opening so frame faces never coincide with the wall reveal.
+  const w = el.width - 0.004;
+  const h = el.height - 0.004;
   const fw = Math.min(el.frameWidth, w / 4, h / 4);
   const fd = Math.min(el.frameDepth, hf.wall.thickness + 0.02);
   const win = new THREE.Group();
-  win.position.set(el.offset, el.sillHeight, 0);
+  win.position.set(el.offset, el.sillHeight + 0.002, 0);
   addBox(win, frame, fw, h, fd, -w / 2 + fw / 2, h / 2, 0, 'frame');
   addBox(win, frame, fw, h, fd, w / 2 - fw / 2, h / 2, 0, 'frame');
   addBox(win, frame, w, fw, fd, 0, h - fw / 2, 0, 'frame');
@@ -305,8 +365,9 @@ function buildDoor(el: DoorElement, ctx: BuildContext, y0: number): THREE.Object
   if (!hf) return null;
   const frame = ctx.material(el.frameMaterial);
   const leaf = ctx.material(el.leafMaterial);
-  const w = el.width;
-  const h = el.height;
+  // Inset 2 mm from the opening so frame faces never coincide with the wall reveal.
+  const w = el.width - 0.004;
+  const h = el.height - 0.002;
   const fw = 0.06;
   const fd = Math.min(el.frameDepth, hf.wall.thickness + 0.02);
   const d = new THREE.Group();
@@ -383,7 +444,8 @@ function buildSlab(el: SlabElement, ctx: BuildContext, y0: number): THREE.Object
   const geo = new THREE.ExtrudeGeometry(polygonShape(el.polygon), { depth: el.thickness, bevelEnabled: false });
   geo.rotateX(-Math.PI / 2);
   const mesh = new THREE.Mesh(geo, ctx.material(el.material));
-  mesh.position.y = y0 + el.elevation - el.thickness;
+  // +2 mm: keeps the floor surface off the coplanar wall top/bottom faces (no z-fighting).
+  mesh.position.y = y0 + el.elevation - el.thickness + 0.002;
   const g = new THREE.Group();
   g.add(mesh);
   return g;

@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Camera, ChevronDown, ChevronUp, CloudOff, Download, Eye, FileUp, Loader2, Plus, Share2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Camera, Footprints, ChevronDown, ChevronUp, CloudOff, Download, Eye, FileUp, Loader2, Plus, Share2, Sparkles, X } from 'lucide-react';
 import * as THREE from 'three';
 import { useEditor, type ViewMode } from '../store/editor';
 import { Viewport } from '../three/Viewport';
@@ -11,6 +11,8 @@ import { Inspector } from './Inspector';
 import { BottomToolbar, ViewControls } from './Toolbar';
 import { ExportDialog, ShareDialog } from './Dialogs';
 import { DrawingImportDialog } from './DrawingImport';
+import { WalkHud } from './WalkHud';
+import { startWalk, stopWalk } from './walk';
 import { Button, IconButton, TooltipProvider } from '../ui/primitives';
 import { api } from '../lib/api';
 import { cn, downloadBlob, timeAgo } from '../lib/utils';
@@ -106,6 +108,9 @@ function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => vo
           <>
             <Button size="sm" variant="ghost" onClick={() => window.dispatchEvent(new CustomEvent('ai3d:import-drawing'))}>
               <FileUp className="h-3.5 w-3.5" /> Import drawing
+            </Button>
+            <Button size="sm" variant="ghost" onClick={startWalk} data-testid="walk-button">
+              <Footprints className="h-3.5 w-3.5" /> Walk inside
             </Button>
             <Button size="sm" variant="ghost" onClick={onShare}>
               <Share2 className="h-3.5 w-3.5" /> Share
@@ -278,6 +283,11 @@ function useShortcuts(save: (manual?: boolean) => void, openExport: () => void) 
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
       if (document.querySelector('[role="dialog"]')) return;
       const st = useEditor.getState();
+      // Walk mode owns the keyboard (WASD etc.); Esc releases the mouse, a second Esc exits.
+      if (st.walkMode) {
+        if (e.key === 'Escape' && !st.walkLocked) stopWalk();
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -336,6 +346,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const viewMode = useEditor((s) => s.viewMode);
   const readOnly = useEditor((s) => s.readOnly);
+  const walkMode = useEditor((s) => s.walkMode);
   const selectionCount = useEditor((s) => s.selection.length);
   const save = useAutosave();
   const openExport = useCallback(() => setExportOpen(true), []);
@@ -397,12 +408,13 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   }
 
   const presentation = viewMode === 'presentation';
+  const immersive = presentation || walkMode;
   return (
     <TooltipProvider>
       <div className="flex h-screen flex-col overflow-hidden bg-ink-900">
-        {!presentation ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} /> : null}
+        {!immersive ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} /> : null}
         <div className="relative flex min-h-0 flex-1">
-          {!presentation ? (
+          {!immersive ? (
             <aside className="relative z-10 flex w-[264px] shrink-0 flex-col border-r border-white/[0.06] bg-ink-850">
               <LeftSidebar />
             </aside>
@@ -417,16 +429,19 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
             )}
             <div className="pointer-events-none absolute inset-0">
               <Notice />
-              <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
-                <ViewControls />
-              </div>
+              {!walkMode ? (
+                <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
+                  <ViewControls />
+                </div>
+              ) : null}
+              {walkMode ? <WalkHud /> : null}
               {!loading ? <EmptyState /> : null}
               <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 justify-center">
-                {presentation ? <PresentationBar /> : readOnly ? null : <BottomToolbar onExport={() => setExportOpen(true)} onSave={() => save(true)} />}
+                {walkMode ? null : presentation ? <PresentationBar /> : readOnly ? null : <BottomToolbar onExport={() => setExportOpen(true)} onSave={() => save(true)} />}
               </div>
             </div>
           </main>
-          {!presentation ? (
+          {!immersive ? (
             <aside className="relative z-10 flex w-[360px] shrink-0 flex-col border-l border-white/[0.06] bg-ink-850">
               <div className={cn('flex flex-col border-b border-white/[0.06]', inspectorOpen && selectionCount ? 'max-h-[46%]' : '')}>
                 <button className="flex items-center justify-between px-3 py-2 text-left" onClick={() => setInspectorOpen(!inspectorOpen)}>

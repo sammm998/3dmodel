@@ -2,12 +2,26 @@
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PointerLockControls } from '@react-three/drei';
+import { OrbitControls } from '@react-three/drei';
 import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 import { viewportHandles } from './registry';
+import { WalkControls } from './Walk';
 
 type Controls = { target: THREE.Vector3; update: () => void; enabled: boolean; addEventListener: (t: string, f: () => void) => void; removeEventListener: (t: string, f: () => void) => void };
+
+interface Tween {
+  fromPos: THREE.Vector3;
+  toPos: THREE.Vector3;
+  fromTarget: THREE.Vector3;
+  toTarget: THREE.Vector3;
+  fromZoom: number;
+  toZoom: number;
+  t0: number;
+  dur: number;
+}
+
+const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export function CameraRig() {
   const { camera, size } = useThree();
@@ -15,20 +29,31 @@ export function CameraRig() {
   const viewRequest = useEditor((s) => s.viewRequest);
   const walkMode = useEditor((s) => s.walkMode);
   const cameraKind = useEditor((s) => s.camera);
+  const tween = useRef<Tween | null>(null);
+  const firstView = useRef(true);
 
   useEffect(() => {
-    viewportHandles.controls = controls;
-  }, [controls]);
+    // Only orbit controls have a target; walk controls must not replace the handle.
+    if (controls && 'target' in controls) {
+      viewportHandles.controls = controls;
+      const exit = viewportHandles.walkExit;
+      if (exit) {
+        viewportHandles.walkExit = undefined;
+        camera.position.copy(exit.position);
+        controls.target.copy(exit.target);
+        controls.update();
+      }
+    }
+  }, [controls, camera]);
 
   // Track camera orientation in plan for "left/right" in natural language.
   useEffect(() => {
-    if (!controls) return;
+    if (!controls || !('target' in controls)) return;
     const update = () => {
       const dir = new THREE.Vector3();
       camera.getWorldDirection(dir);
       const fwd = new THREE.Vector2(dir.x, dir.z);
       if (fwd.lengthSq() < 1e-6) {
-        // Top view: use camera up as forward.
         const up = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
         fwd.set(up.x, up.z);
       }
@@ -41,7 +66,7 @@ export function CameraRig() {
   }, [controls, camera]);
 
   useEffect(() => {
-    if (!viewRequest || !controls) return;
+    if (!viewRequest || !controls || !('target' in controls) || walkMode) return;
     const scene = useEditor.getState().scene;
     const b = sceneBounds(scene) ?? { min: { x: -5, y: 0, z: -5 }, max: { x: 5, y: 3, z: 5 } };
     const c = new THREE.Vector3((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
@@ -60,58 +85,59 @@ export function CameraRig() {
       right: new THREE.Vector3(1, 0.12, 0).normalize(),
     };
     const d = dirs[viewRequest.preset] ?? dirs.iso;
-    camera.position.copy(c.clone().add(d.multiplyScalar(dist)));
-    camera.up.set(0, 1, 0);
-    camera.lookAt(c);
+    const toPos = c.clone().add(d.multiplyScalar(dist));
     const ortho = camera as THREE.OrthographicCamera;
+    let toZoom = ortho.isOrthographicCamera ? ortho.zoom : 1;
     if (ortho.isOrthographicCamera) {
       const span = Math.max(ext.x, ext.z, ext.y) * 1.25 + 2;
-      ortho.zoom = Math.min(size.width, size.height) / span;
+      toZoom = Math.min(size.width, size.height) / span;
       ortho.near = -1000;
-      ortho.far = 5000;
-      ortho.updateProjectionMatrix();
+      ortho.far = 2500;
     }
-    controls.target.copy(c);
-    controls.update();
+    camera.up.set(0, 1, 0);
+    if (firstView.current) {
+      // Opening a project: jump straight to the view.
+      firstView.current = false;
+      camera.position.copy(toPos);
+      if (ortho.isOrthographicCamera) ortho.zoom = toZoom;
+      camera.updateProjectionMatrix();
+      controls.target.copy(c);
+      controls.update();
+      return;
+    }
+    tween.current = {
+      fromPos: camera.position.clone(),
+      toPos,
+      fromTarget: controls.target.clone(),
+      toTarget: c,
+      fromZoom: ortho.isOrthographicCamera ? ortho.zoom : 1,
+      toZoom,
+      t0: performance.now(),
+      dur: 650,
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewRequest, controls, cameraKind]);
 
-  return walkMode ? <WalkControls /> : <OrbitControls makeDefault enableDamping dampingFactor={0.12} maxPolarAngle={Math.PI * 0.495} minDistance={0.3} maxDistance={2000} screenSpacePanning />;
-}
-
-function WalkControls() {
-  const { camera } = useThree();
-  const keys = useRef(new Set<string>());
-  const ready = useRef(false);
-  useEffect(() => {
-    const st = useEditor.getState();
-    const lvl = st.scene.levels.find((l) => l.id === st.activeLevelId) ?? st.scene.levels[0];
-    const ctr = viewportHandles.controls?.target ?? new THREE.Vector3();
-    camera.position.set(ctr.x, lvl.elevation + 1.65, ctr.z + 0.01);
-    camera.lookAt(ctr.x, lvl.elevation + 1.65, ctr.z - 5);
-    ready.current = true;
-    const down = (e: KeyboardEvent) => keys.current.add(e.code);
-    const up = (e: KeyboardEvent) => keys.current.delete(e.code);
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, [camera]);
-  useFrame((_, dt) => {
-    if (!ready.current) return;
-    const k = keys.current;
-    const speed = (k.has('ShiftLeft') ? 4 : 1.6) * dt;
-    const f = new THREE.Vector3();
-    camera.getWorldDirection(f);
-    f.y = 0;
-    f.normalize();
-    const r = new THREE.Vector3(-f.z, 0, f.x);
-    if (k.has('KeyW') || k.has('ArrowUp')) camera.position.addScaledVector(f, speed);
-    if (k.has('KeyS') || k.has('ArrowDown')) camera.position.addScaledVector(f, -speed);
-    if (k.has('KeyA') || k.has('ArrowLeft')) camera.position.addScaledVector(r, -speed);
-    if (k.has('KeyD') || k.has('ArrowRight')) camera.position.addScaledVector(r, speed);
+  // Smooth camera transitions between views.
+  useFrame(() => {
+    const tw = tween.current;
+    if (!tw || !controls || !('target' in controls)) return;
+    const t = Math.min(1, (performance.now() - tw.t0) / tw.dur);
+    const e = ease(t);
+    camera.position.lerpVectors(tw.fromPos, tw.toPos, e);
+    controls.target.lerpVectors(tw.fromTarget, tw.toTarget, e);
+    const ortho = camera as THREE.OrthographicCamera;
+    if (ortho.isOrthographicCamera) {
+      ortho.zoom = tw.fromZoom + (tw.toZoom - tw.fromZoom) * e;
+      ortho.updateProjectionMatrix();
+    }
+    controls.update();
+    if (t >= 1) tween.current = null;
   });
-  return <PointerLockControls makeDefault onUnlock={() => useEditor.getState().set({ walkMode: false })} />;
+
+  return walkMode ? (
+    <WalkControls />
+  ) : (
+    <OrbitControls makeDefault enableDamping dampingFactor={0.08} rotateSpeed={0.8} zoomSpeed={0.9} maxPolarAngle={Math.PI * 0.495} minDistance={0.3} maxDistance={1500} screenSpacePanning />
+  );
 }

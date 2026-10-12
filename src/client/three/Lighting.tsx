@@ -42,7 +42,7 @@ function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: s
   mat.uniforms.bottom.value.set(bottom).convertSRGBToLinear();
   mat.uniforms.sunDir.value.copy(sunDir);
   return (
-    <mesh material={mat} scale={3000} frustumCulled={false} renderOrder={-1} raycast={() => {}}>
+    <mesh material={mat} scale={1800} frustumCulled={false} renderOrder={-1} raycast={() => {}}>
       <sphereGeometry args={[1, 32, 16]} />
     </mesh>
   );
@@ -86,7 +86,7 @@ export function Lighting() {
     gl.toneMappingExposure = realistic ? preset.exposure : 1.0;
   }, [gl, realistic, preset.exposure]);
 
-  const shadowSize = 4096;
+  const shadowSize = 2048;
   const target = useMemo(() => new THREE.Object3D(), []);
   target.position.copy(center);
   target.updateMatrixWorld();

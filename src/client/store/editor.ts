@@ -58,6 +58,9 @@ export interface EditorState {
   camera: CameraKind;
   viewRequest: { preset: ViewPreset; n: number } | null;
   walkMode: boolean;
+  /** Pointer is locked into the walk view. */
+  walkLocked: boolean;
+  walkInfo: { level: string; fly: boolean };
   showGrid: boolean;
   showLabels: boolean;
   snap: boolean;
@@ -120,6 +123,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   camera: 'perspective',
   viewRequest: null,
   walkMode: false,
+  walkLocked: false,
+  walkInfo: { level: '', fly: false },
   showGrid: true,
   showLabels: true,
   snap: true,

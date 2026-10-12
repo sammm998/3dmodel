@@ -3,6 +3,7 @@ import { Box, Camera, Download, Eye, Footprints, Grid3x3, Magnet, Maximize, Move
 import { useEditor, type Tool, type ViewPreset } from '../store/editor';
 import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, IconButton, Separator, Tooltip } from '../ui/primitives';
 import { MaterialGrid } from './MaterialPicker';
+import { startWalk, stopWalk } from './walk';
 import { captureImage } from './capture';
 import { downloadBlob, cn } from '../lib/utils';
 import { viewportHandles } from '../three/registry';
@@ -108,7 +109,7 @@ export function ViewControls() {
       <IconButton label={cam === 'perspective' ? 'Switch to orthographic' : 'Switch to perspective'} size="iconSm" active={cam === 'orthographic'} onClick={() => { st().set({ camera: cam === 'perspective' ? 'orthographic' : 'perspective' }); setTimeout(() => st().requestView('fit'), 30); }}>
         <Box className="h-3.5 w-3.5" />
       </IconButton>
-      <IconButton label="Walkthrough (WASD, Esc to exit)" size="iconSm" active={walk} onClick={() => st().set({ walkMode: !walk })}>
+      <IconButton label="Walk inside (first person)" size="iconSm" active={walk} onClick={() => (walk ? stopWalk() : startWalk())}>
         <Footprints className="h-3.5 w-3.5" />
       </IconButton>
       {viewMode === 'modeling' ? (
