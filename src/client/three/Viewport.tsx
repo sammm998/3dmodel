@@ -15,12 +15,13 @@ import { objectRegistry, viewportHandles } from './registry';
 import { elementAnchor, findElement } from '@/core/scene/query';
 
 function Handles() {
-  const { gl, camera, scene, size } = useThree();
+  const { gl, camera, scene, size, invalidate } = useThree();
   useEffect(() => {
     viewportHandles.gl = gl;
     viewportHandles.camera = camera;
     viewportHandles.scene = scene;
-  }, [gl, camera, scene]);
+    viewportHandles.invalidate = invalidate;
+  }, [gl, camera, scene, invalidate]);
   // Test/automation bridge: element → screen position, state access.
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
@@ -63,10 +64,11 @@ function Handles() {
           c.target.set(...target);
           c.update();
         } else camera.lookAt(...target);
+        invalidate();
       },
       three: { gl, scene, camera },
     };
-  }, [camera, gl, size, scene]);
+  }, [camera, gl, size, scene, invalidate]);
   return null;
 }
 
@@ -95,7 +97,9 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const walkMode = useEditor((s) => s.walkMode);
   // Adaptive quality: resolution and AO follow the measured frame rate.
-  const [dpr, setDpr] = useState(() => (typeof window === 'undefined' ? 1 : Math.min(1.5, window.devicePixelRatio || 1)));
+  // window.__AI3D_HQ__ (set by capture scripts) pins full quality regardless of frame rate.
+  const hq = typeof window !== 'undefined' && !!(window as unknown as { __AI3D_HQ__?: number }).__AI3D_HQ__;
+  const [dpr, setDpr] = useState(() => (typeof window === 'undefined' ? 1 : hq ? (window as unknown as { __AI3D_HQ__: number }).__AI3D_HQ__ : Math.min(1.5, window.devicePixelRatio || 1)));
   const [lowPerf, setLowPerf] = useState(false);
   const style = viewMode === 'modeling' ? 'technical' : 'realistic';
   // Keyed on content, not identity: every edit clones the scene, which must not rebuild all materials.
@@ -110,7 +114,10 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
 
   return (
     <div ref={containerRef} className="absolute inset-0" data-testid="viewport">
+      {/* Render on demand (camera moves, edits, resizes) so an idle model costs no GPU time;
+          the first-person view animates continuously. */}
       <Canvas
+        frameloop={walkMode ? 'always' : 'demand'}
         shadows={{ type: THREE.PCFSoftShadowMap }}
         dpr={dpr}
         gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance', logarithmicDepthBuffer: false }}
@@ -148,8 +155,8 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
             sectionSize={5}
             cellThickness={0.6}
             sectionThickness={1.1}
-            cellColor="#2b3038"
-            sectionColor="#3f4652"
+            cellColor="#2e2c28"
+            sectionColor="#45423b"
             fadeDistance={160}
             fadeStrength={1.5}
             followCamera={false}
@@ -158,12 +165,13 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
         {viewMode === 'modeling' ? <axesHelper args={[1.2]} position={[0, 0.003, 0]} /> : null}
         {viewMode !== 'presentation' && !walkMode ? (
           <GizmoHelper alignment="bottom-right" margin={[72, 92]}>
-            <GizmoViewport axisColors={['#e06c75', '#98c379', '#61afef']} labelColor="#0b0d10" />
+            <GizmoViewport axisColors={['#e06c75', '#98c379', '#61afef']} labelColor="#0f0f0d" />
           </GizmoHelper>
         ) : null}
         <Effects lowPerf={lowPerf} />
-        {/* Degrade once and stay there: toggling quality back and forth is itself visible flicker. */}
-        <PerformanceMonitor
+        {/* Frame-rate based quality only while rendering continuously (walk mode). Degrade once and
+            stay there: toggling quality back and forth is itself visible flicker. */}
+        {hq || !walkMode ? null : <PerformanceMonitor
           onDecline={() => {
             setDpr(1);
             setLowPerf(true);
@@ -173,7 +181,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
             setDpr(1);
             setLowPerf(true);
           }}
-        />
+        />}
         <Handles />
       </Canvas>
     </div>

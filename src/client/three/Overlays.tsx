@@ -8,7 +8,7 @@ import { describeElement, elementAnchor, findElement, elementsOfType, levelOf } 
 import { formatArea, formatLength } from '@/core/schema/units';
 import { polygonArea, polygonCentroid } from '@/core/geometry/math2d';
 
-const ACCENT = new THREE.Color('#f0c97f');
+const ACCENT = new THREE.Color('#dcbd8a');
 
 function buildEdges(obj: THREE.Object3D, color: THREE.Color, opacity: number): THREE.Group {
   const g = new THREE.Group();
@@ -154,12 +154,12 @@ export function MeasureOverlay() {
       {v.map((p, i) => (
         <mesh key={i} position={p} raycast={() => {}}>
           <sphereGeometry args={[0.045, 16, 16]} />
-          <meshBasicMaterial color="#f0c97f" depthTest={false} />
+          <meshBasicMaterial color="#dcbd8a" depthTest={false} />
         </mesh>
       ))}
       {v.length === 2 ? (
         <>
-          <Line points={[v[0], v[1]]} color="#f0c97f" lineWidth={2} depthTest={false} dashed={false} />
+          <Line points={[v[0], v[1]]} color="#dcbd8a" lineWidth={2} depthTest={false} dashed={false} />
           <Label position={[(v[0].x + v[1].x) / 2, (v[0].y + v[1].y) / 2 + 0.15, (v[0].z + v[1].z) / 2]} accent>
             <span className="font-mono text-[12px] text-accent">{formatLength(dist, units)}</span>
             <span className="ml-2 text-[10px] text-ink-300">

@@ -7,10 +7,10 @@ import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 
 const ENV_PRESETS = {
-  day: { top: '#5f8fcf', horizon: '#dfe8f0', bottom: '#8a8f86', exposure: 1.0, sun: '#fff4e2', sunI: 3.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
-  sunset: { top: '#3a4f7a', horizon: '#f2b27d', bottom: '#5a4a44', exposure: 0.95, sun: '#ffb27a', sunI: 2.6, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
-  overcast: { top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.05, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
-  night: { top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 0.8, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
+  day: { ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.0, sun: '#fff4e2', sunI: 3.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
+  sunset: { ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.0, sun: '#ffc796', sunI: 2.8, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
+  overcast: { ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.05, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
+  night: { ground: '#1a1d1a', top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 0.8, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
 };
 
 /** Gradient sky dome with a soft sun glow (tone-mapping friendly). */
@@ -50,18 +50,35 @@ function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: s
 
 /** Image-based reflections without network assets (procedural room environment). */
 function EnvironmentMap({ intensity }: { intensity: number }) {
-  const { gl, scene } = useThree();
+  const { gl, scene, invalidate } = useThree();
   useEffect(() => {
     const pmrem = new THREE.PMREMGenerator(gl);
     const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     scene.environment = env;
     scene.environmentIntensity = intensity;
+    invalidate();
     return () => {
       scene.environment = null;
       env.dispose();
       pmrem.dispose();
+      invalidate();
     };
-  }, [gl, scene, intensity]);
+  }, [gl, scene, intensity, invalidate]);
+  return null;
+}
+
+/** Scene-level fog (a <fog attach> inside a group would attach to the group, not the scene). */
+function SceneFog({ color, near, far }: { color: string; near: number; far: number }) {
+  const scene = useThree((s) => s.scene);
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    scene.fog = new THREE.Fog(color, near, far);
+    invalidate();
+    return () => {
+      scene.fog = null;
+      invalidate();
+    };
+  }, [scene, color, near, far, invalidate]);
   return null;
 }
 
@@ -122,6 +139,7 @@ export function Lighting() {
   const el = THREE.MathUtils.degToRad(settings.sunElevation);
   const sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
   const sunPos = center.clone().add(sunDir.clone().multiplyScalar(radius * 3));
+  const groundY = (scene.levels[0]?.elevation ?? 0) - 0.2;
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -135,10 +153,16 @@ export function Lighting() {
   return (
     <>
       <primitive object={target} />
-      {!realistic ? <color attach="background" args={['#15181d']} /> : null}
+      {!realistic ? <color attach="background" args={['#161513']} /> : null}
       {realistic ? (
         <group key="realistic-lighting">
           <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} />
+          {/* Atmospheric depth: distant ground dissolves into the horizon instead of ending at a hard edge. */}
+          <SceneFog color={preset.horizon} near={radius * 3.2} far={radius * 9} />
+          <mesh rotation-x={-Math.PI / 2} position={[center.x, groundY, center.z]} receiveShadow raycast={() => {}}>
+            <circleGeometry args={[radius * 40, 64]} />
+            <meshStandardMaterial color={preset.ground} roughness={1} metalness={0} />
+          </mesh>
           <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} />
           <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI]} />
           <directionalLight

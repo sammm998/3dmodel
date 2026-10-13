@@ -163,7 +163,6 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
 
   const exteriorWallsByLevel: { wall: WallElement; seg: EdgeSegment }[][] = [];
   const interiorWallsByLevel: { wall: WallElement; seg: EdgeSegment }[][] = [];
-  let wallCounter = 0;
 
   for (let L = 0; L < nLevels; L++) {
     const lvl = levels[L];
@@ -190,7 +189,6 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       const fname = facadeName(seg.outward);
       const k = (facadeCount.get(fname) ?? 0) + 1;
       facadeCount.set(fname, k);
-      wallCounter++;
       const levelSuffix = multiLevel ? ` · ${lvl.name}` : '';
       // Orient walls so that the "left" normal points outward is not required;
       // we store outward direction in BIM data for exporters.

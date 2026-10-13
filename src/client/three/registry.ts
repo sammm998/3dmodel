@@ -9,6 +9,8 @@ export const viewportHandles: {
   camera?: THREE.Camera;
   scene?: THREE.Scene;
   controls?: { target: THREE.Vector3; update: () => void } | null;
+  /** Requests a frame (the canvas renders on demand outside walk mode). */
+  invalidate?: () => void;
   container?: HTMLElement | null;
   /** Where the camera was when walk mode ended (orbit resumes from there). */
   walkExit?: { position: THREE.Vector3; target: THREE.Vector3 };

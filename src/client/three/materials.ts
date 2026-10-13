@@ -272,7 +272,7 @@ export class MaterialManager {
 
   private create(ref: string): THREE.Material {
     if (ref === '__room') {
-      return new THREE.MeshBasicMaterial({ color: '#e2b86b', transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
+      return new THREE.MeshBasicMaterial({ color: '#cdab74', transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 });
     }
     const def = resolveMaterial(ref, this.custom);
     const isGlass = def.category === 'glass';

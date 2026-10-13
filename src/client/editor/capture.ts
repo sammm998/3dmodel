@@ -25,9 +25,11 @@ export async function captureImage(scale = 2): Promise<Blob | null> {
   if (!gl) return null;
   const prev = gl.getPixelRatio();
   gl.setPixelRatio(Math.min(4, window.devicePixelRatio * scale));
+  viewportHandles.invalidate?.();
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   await new Promise((r) => setTimeout(r, 150));
   const blob = await new Promise<Blob | null>((res) => gl.domElement.toBlob(res, 'image/png'));
   gl.setPixelRatio(prev);
+  viewportHandles.invalidate?.();
   return blob;
 }

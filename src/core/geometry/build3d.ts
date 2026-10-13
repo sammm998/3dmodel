@@ -448,6 +448,17 @@ function buildSlab(el: SlabElement, ctx: BuildContext, y0: number): THREE.Object
   mesh.position.y = y0 + el.elevation - el.thickness + 0.002;
   const g = new THREE.Group();
   g.add(mesh);
+  // Painted ceiling on the underside (the extrusion's bottom cap carries the floor finish).
+  // 3 mm below the slab so the two faces are never coplanar.
+  if (y0 + el.elevation > 0.05) {
+    // Shape in (x, z) rotated +90° about X: lands on the plan at (x, z) facing down.
+    const shape = new THREE.Shape(el.polygon.map((p) => new THREE.Vector2(p.x, p.z)));
+    const ceil = new THREE.ShapeGeometry(shape);
+    ceil.rotateX(Math.PI / 2);
+    const c = new THREE.Mesh(ceil, ctx.material('paint_white'));
+    c.position.y = mesh.position.y - 0.003;
+    g.add(c);
+  }
   return g;
 }
 
