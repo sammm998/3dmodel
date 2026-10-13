@@ -154,14 +154,23 @@ const KEEP_ATTRS = new Set(['position', 'normal', 'uv']);
  */
 export function mergeByMaterial(root: THREE.Object3D): THREE.Object3D {
   const meshes: THREE.Mesh[] = [];
+  const parts: THREE.Object3D[] = [];
   let mergeable = true;
-  root.traverse((o) => {
+  const visit = (o: THREE.Object3D) => {
+    // Moving parts (door leaves) stay separate so they can be animated.
+    if (o !== root && o.userData.doorPart) {
+      parts.push(o);
+      return;
+    }
     const m = o as THREE.Mesh;
-    if (!m.isMesh) return;
-    if (Array.isArray(m.material) || m.userData.helper) mergeable = false;
-    meshes.push(m);
-  });
-  if (!mergeable || meshes.length <= 1) return root;
+    if (m.isMesh) {
+      if (Array.isArray(m.material) || m.userData.helper) mergeable = false;
+      meshes.push(m);
+    }
+    for (const c of o.children) visit(c);
+  };
+  visit(root);
+  if (!mergeable || meshes.length + parts.length <= 1) return root;
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const buckets = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; shadow: boolean }>();
@@ -194,6 +203,12 @@ export function mergeByMaterial(root: THREE.Object3D): THREE.Object3D {
     mesh.castShadow = b.shadow && !glassy;
     mesh.receiveShadow = true;
     out.add(mesh);
+  }
+  for (const p of parts) {
+    // Re-parent with the same placement relative to the element root.
+    new THREE.Matrix4().multiplyMatrices(inv, p.matrixWorld).decompose(p.position, p.quaternion, p.scale);
+    p.userData.closed = { position: p.position.clone(), quaternion: p.quaternion.clone() };
+    out.add(p);
   }
   return out;
 }
@@ -380,24 +395,41 @@ function buildDoor(el: DoorElement, ctx: BuildContext, y0: number): THREE.Object
   const iw = w - 2 * fw;
   const ih = h - fw;
   const handleMat = ctx.material('steel');
+  /**
+   * Moving parts live in their own groups (kept out of geometry merging) so the
+   * first-person view can open doors as the walker approaches:
+   * hinge = rotate about local Y at the group origin, slide = move along local X, lift = move up.
+   */
+  const part = (data: { kind: 'hinge'; hinge: number } | { kind: 'slide'; dx: number } | { kind: 'lift'; dy: number }, x = 0, z = 0) => {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    g.userData.doorPart = data;
+    d.add(g);
+    return g;
+  };
   switch (el.doorType) {
     case 'hinged': {
-      addBox(d, leaf, iw - 0.006, ih - 0.006, 0.045, 0, ih / 2, 0);
+      // Hinge on the side opposite the handle.
+      const hingeX = el.swing === 'left' ? -iw / 2 : iw / 2;
+      const p = part({ kind: 'hinge', hinge: Math.sign(hingeX) }, hingeX);
+      addBox(p, leaf, iw - 0.006, ih - 0.006, 0.045, -hingeX, ih / 2, 0);
       const hx = el.swing === 'left' ? iw / 2 - 0.08 : -iw / 2 + 0.08;
-      addBox(d, handleMat, 0.12, 0.02, 0.02, hx - (el.swing === 'left' ? 0.05 : -0.05), 1.0, 0.045);
-      addBox(d, handleMat, 0.12, 0.02, 0.02, hx - (el.swing === 'left' ? 0.05 : -0.05), 1.0, -0.045);
+      addBox(p, handleMat, 0.12, 0.02, 0.02, hx - (el.swing === 'left' ? 0.05 : -0.05) - hingeX, 1.0, 0.045);
+      addBox(p, handleMat, 0.12, 0.02, 0.02, hx - (el.swing === 'left' ? 0.05 : -0.05) - hingeX, 1.0, -0.045);
       break;
     }
     case 'double': {
       for (const sx of [-1, 1]) {
-        addBox(d, leaf, iw / 2 - 0.006, ih - 0.006, 0.045, (sx * iw) / 4, ih / 2, 0);
-        addBox(d, handleMat, 0.02, 0.3, 0.02, sx * 0.06, 1.05, 0.045);
+        const hingeX = (sx * iw) / 2;
+        const p = part({ kind: 'hinge', hinge: sx }, hingeX);
+        addBox(p, leaf, iw / 2 - 0.006, ih - 0.006, 0.045, (sx * iw) / 4 - hingeX, ih / 2, 0);
+        addBox(p, handleMat, 0.02, 0.3, 0.02, sx * 0.06 - hingeX, 1.05, 0.045);
       }
       break;
     }
     case 'sliding': {
-      addBox(d, leaf, iw / 2 + 0.05, ih - 0.01, 0.04, -iw / 4, ih / 2, 0.025);
-      addBox(d, leaf, iw / 2 + 0.05, ih - 0.01, 0.04, iw / 4, ih / 2, -0.025);
+      addBox(part({ kind: 'slide', dx: -iw / 2 }, 0, 0.025), leaf, iw / 2 + 0.05, ih - 0.01, 0.04, -iw / 4, ih / 2, 0);
+      addBox(part({ kind: 'slide', dx: iw / 2 }, 0, -0.025), leaf, iw / 2 + 0.05, ih - 0.01, 0.04, iw / 4, ih / 2, 0);
       break;
     }
     case 'sliding_glass': {
@@ -408,21 +440,20 @@ function buildDoor(el: DoorElement, ctx: BuildContext, y0: number): THREE.Object
       ] as const) {
         const pw = iw / 2 + 0.04;
         const px = (sx * iw) / 4;
-        const p = new THREE.Group();
-        p.position.set(px, 0, sz);
+        const p = part({ kind: 'slide', dx: (sx * iw) / 2 }, px, sz);
         addBox(p, frame, 0.05, ih, 0.05, -pw / 2 + 0.025, ih / 2, 0);
         addBox(p, frame, 0.05, ih, 0.05, pw / 2 - 0.025, ih / 2, 0);
         addBox(p, frame, pw, 0.05, 0.05, 0, ih - 0.025, 0);
         addBox(p, frame, pw, 0.08, 0.05, 0, 0.04, 0);
         addBox(p, glass, pw - 0.1, ih - 0.13, 0.012, 0, ih / 2 + 0.015, 0).castShadow = false;
-        d.add(p);
       }
       break;
     }
     case 'garage': {
       const panels = Math.max(3, Math.round(ih / 0.55));
       const ph = ih / panels;
-      for (let i = 0; i < panels; i++) addBox(d, leaf, iw, ph - 0.01, 0.05, 0, ph * (i + 0.5), 0);
+      const p = part({ kind: 'lift', dy: ih - 0.1 });
+      for (let i = 0; i < panels; i++) addBox(p, leaf, iw, ph - 0.01, 0.05, 0, ph * (i + 0.5), 0);
       break;
     }
     case 'opening':

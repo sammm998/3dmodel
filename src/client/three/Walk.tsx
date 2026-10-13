@@ -20,6 +20,7 @@ import { polygonArea, polygonCentroid } from '@/core/geometry/math2d';
 import type { Scene } from '@/core/schema/scene';
 import type { ElementType } from '@/core/schema/elements';
 import { WALK, WalkPhysics, type Collider } from '@/core/geometry/walkPhysics';
+import { animateDoors, collectDoorParts, resetDoors, type DoorPart } from '@/core/geometry/doorMotion';
 
 const EYE = WALK.eye;
 
@@ -68,6 +69,7 @@ export function WalkControls() {
   const fly = useRef(false);
   const lastLevel = useRef('');
   const settled = useRef(false);
+  const doors = useRef<DoorPart[]>([]);
 
   // Colliders from the rendered element objects.
   useEffect(() => {
@@ -75,17 +77,26 @@ export function WalkControls() {
       const scene = useEditor.getState().scene;
       const block: Collider[] = [];
       const ground: Collider[] = [];
+      const solid: Collider[] = [];
+      resetDoors(doors.current);
+      doors.current = [];
       for (const el of scene.elements) {
         const obj = objectRegistry.get(el.id);
         if (!obj || el.hidden) continue;
         const c = WalkPhysics.collider(obj);
         if (!c) continue;
+        if (el.type !== 'room') {
+          // Door leaves swing up to a leaf width out of the wall: widen their bounds.
+          solid.push(el.type === 'door' ? { obj, box: c.box.clone().expandByScalar(1.1) } : c);
+        }
+        if (el.type === 'door') doors.current.push(...collectDoorParts(obj, c.box));
         const passable = el.type === 'furniture' && (PASSABLE_FURNITURE.has(el.kind) || el.height < 0.25);
         if (BLOCKING.includes(el.type) && !passable) block.push(c);
         if (GROUND.includes(el.type)) ground.push(c);
       }
       physics.block = block;
       physics.ground = ground;
+      physics.solid = solid;
       // Never start inside or right against geometry (e.g. a stair next to the door).
       if (!settled.current && !fly.current) {
         settled.current = true;
@@ -109,8 +120,12 @@ export function WalkControls() {
     camera.lookAt(f.x + look.x * 5, f.y + EYE, f.z + look.z * 5);
     const persp = camera as THREE.PerspectiveCamera;
     const prevFov = persp.fov;
+    const prevNear = camera.near;
     if (persp.isPerspectiveCamera) {
       persp.fov = 70;
+      // The eye keeps WALK.eyeClearance (15 cm) from every surface, so a 5 cm near
+      // plane can never slice through geometry.
+      persp.near = 0.05;
       persp.updateProjectionMatrix();
     }
     const changeLevel = (dir: 1 | -1) => {
@@ -142,8 +157,10 @@ export function WalkControls() {
       window.removeEventListener('blur', blur);
       if (persp.isPerspectiveCamera) {
         persp.fov = prevFov;
+        persp.near = prevNear;
         persp.updateProjectionMatrix();
       }
+      resetDoors(doors.current);
       // Hand back to orbit controls looking where the walker was looking.
       const dir = new THREE.Vector3();
       camera.getWorldDirection(dir);
@@ -172,10 +189,12 @@ export function WalkControls() {
     const speed = (k.has('ShiftLeft') || k.has('ShiftRight') ? WALK.runSpeed : WALK.walkSpeed) * (fly.current ? 2 : 1);
     if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * dt);
 
+    animateDoors(doors.current, f, total);
+
     if (fly.current) {
       if (k.has('Space')) move.y += speed * dt;
       if (k.has('KeyC')) move.y -= speed * dt;
-      f.addScaledVector(move, steps);
+      for (let i = 0; i < steps; i++) physics.fly(move);
       camera.position.set(f.x, f.y + EYE, f.z);
       return;
     }

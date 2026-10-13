@@ -7,6 +7,8 @@ import * as THREE from 'three';
 
 export const WALK = {
   eye: 1.65,
+  /** Minimum distance from the eye to any surface (camera near plane is 0.05). */
+  eyeClearance: 0.15,
   radius: 0.3,
   step: 0.45,
   walkSpeed: 1.7,
@@ -29,7 +31,47 @@ export class WalkPhysics {
   constructor(
     public block: Collider[] = [],
     public ground: Collider[] = [],
+    /** Everything visible; the eye may never come close to any of it. */
+    public solid: Collider[] = [],
   ) {}
+
+  private static EYE_DIRS = [
+    ...Array.from({ length: 8 }, (_, i) => new THREE.Vector3(Math.cos((i / 8) * Math.PI * 2), 0, Math.sin((i / 8) * Math.PI * 2))),
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(0.7071, 0.7071, 0),
+    new THREE.Vector3(-0.7071, 0.7071, 0),
+    new THREE.Vector3(0, 0.7071, 0.7071),
+    new THREE.Vector3(0, 0.7071, -0.7071),
+  ];
+
+  /**
+   * True when no surface is within `eyeClearance` of the eye at feet position
+   * (x, y, z). Guarantees the near plane never slices through geometry, which
+   * is what renders as shards of wall, floor and frames.
+   */
+  eyeClear(x: number, y: number, z: number): boolean {
+    if (!this.solid.length) return true;
+    const eye = new THREE.Vector3(x, y + WALK.eye, z);
+    const objs = this.nearby(this.solid, eye, WALK.eyeClearance + 0.2);
+    if (!objs.length) return true;
+    for (const dir of WalkPhysics.EYE_DIRS) {
+      this.ray.set(eye, dir);
+      this.ray.far = WALK.eyeClearance;
+      if (this.ray.intersectObjects(objs, true).length) return false;
+    }
+    return true;
+  }
+
+  /** Free flight: no gravity or walking collision, but the eye still keeps its clearance. */
+  fly(move: THREE.Vector3) {
+    for (const axis of ['x', 'y', 'z'] as const) {
+      const d = move[axis];
+      if (Math.abs(d) < 1e-7) continue;
+      const next = this.feet.clone();
+      next[axis] += d;
+      if (this.eyeClear(next.x, next.y, next.z)) this.feet.copy(next);
+    }
+  }
 
   static collider(obj: THREE.Object3D): Collider | null {
     obj.updateMatrixWorld(true);
@@ -94,6 +136,7 @@ export class WalkPhysics {
   /** True when the player can stand at (x, z) at the current height without touching anything. */
   isClear(x: number, z: number, margin = 0.1): boolean {
     if (this.noHeadroom(x, z, WALK.radius + margin, 0)) return false;
+    if (!this.eyeClear(x, this.feet.y, z)) return false;
     const p = new THREE.Vector3(x, this.feet.y, z);
     const objs = this.nearby(this.block, p, 1);
     const saved = this.feet.clone();
@@ -151,6 +194,9 @@ export class WalkPhysics {
       const nx = this.feet.x + (axis === 'x' ? d + Math.sign(d) * WALK.radius : 0);
       const nz = this.feet.z + (axis === 'z' ? d + Math.sign(d) * WALK.radius : 0);
       if (this.noHeadroom(nx, nz)) continue;
+      const next = this.feet.clone();
+      next[axis] += d;
+      if (!this.eyeClear(next.x, next.y, next.z)) continue;
       this.feet[axis] += d;
     }
     if (jump && this.onGround) {

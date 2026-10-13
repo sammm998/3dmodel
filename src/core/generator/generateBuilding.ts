@@ -310,12 +310,40 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
     if (L < doorW + 0.4) continue;
     if (usedFacades.has(facadeOrder(seg.outward))) continue;
     let offset = L / 2;
+    const dir = { x: (wall.end.x - wall.start.x) / L, z: (wall.end.z - wall.start.z) / L };
+    let t = L / 2;
     // Prefer the part of the wall in front of the entrance hall.
     if (doorsPlaced === 0 && hallRoom0) {
       const hallCenter = { x: hallRoom0.x + hallRoom0.width / 2, z: hallRoom0.z + hallRoom0.depth / 2 };
-      const dir = { x: (wall.end.x - wall.start.x) / L, z: (wall.end.z - wall.start.z) / L };
-      const t = (hallCenter.x - wall.start.x) * dir.x + (hallCenter.z - wall.start.z) * dir.z;
+      t = (hallCenter.x - wall.start.x) * dir.x + (hallCenter.z - wall.start.z) * dir.z;
       if (t > doorW / 2 + 0.2 && t < L - doorW / 2 - 0.2) offset = t;
+    }
+    {
+      // Keep the entrance clear of the stair in the hall and of interior walls meeting the façade:
+      // take the free position along the wall closest to the hall's centre.
+      const proj = (x: number, z: number) => (x - wall.start.x) * dir.x + (z - wall.start.z) * dir.z;
+      const perp = (x: number, z: number) => Math.abs((x - wall.start.x) * dir.z - (z - wall.start.z) * dir.x);
+      const blocked: [number, number][] = [];
+      const stair = stairPlacements.find((sp) => sp.level === 0)?.rect;
+      if (stair) {
+        const corners: [number, number][] = [
+          [stair.x0, stair.z0],
+          [stair.x1, stair.z0],
+          [stair.x0, stair.z1],
+          [stair.x1, stair.z1],
+        ];
+        if (Math.min(...corners.map(([x, z]) => perp(x, z))) < 2) blocked.push([Math.min(...corners.map(([x, z]) => proj(x, z))) - 0.25, Math.max(...corners.map(([x, z]) => proj(x, z))) + 0.25]);
+      }
+      for (const e of scene.elements) {
+        if (e.type !== 'wall' || e.id === wall.id || e.exterior || (e.levelId ?? levels[0].id) !== wall.levelId) continue;
+        for (const q of [e.start, e.end]) if (perp(q.x, q.z) < 0.3) blocked.push([proj(q.x, q.z) - e.thickness / 2 - 0.3, proj(q.x, q.z) + e.thickness / 2 + 0.3]);
+      }
+      const free = (c: number) => c > doorW / 2 + 0.2 && c < L - doorW / 2 - 0.2 && blocked.every(([b0, b1]) => c + doorW / 2 <= b0 || c - doorW / 2 >= b1);
+      if (!free(offset)) {
+        let best: number | null = null;
+        for (let c = doorW / 2 + 0.2; c <= L - doorW / 2 - 0.2; c += 0.05) if (free(c) && (best === null || Math.abs(c - t) < Math.abs(best - t))) best = c;
+        if (best !== null) offset = best;
+      }
     }
     const door = add(
       createElement(scene, {

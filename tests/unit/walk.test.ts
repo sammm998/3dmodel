@@ -127,3 +127,62 @@ describe('walk spawn', () => {
     expect(z0 - p.feet.z).toBeGreaterThan(1.5);
   });
 });
+
+describe('walking through doors', () => {
+  it.each(['scandinavian-villa', 'contemporary-office'])('%s: the entrance opens on approach, lets the walker in, and the eye never touches geometry', async (starterId) => {
+    const { STARTERS } = await import('@/core/generator/starters');
+    const { collectDoorParts, animateDoors } = await import('@/core/geometry/doorMotion');
+    const { pointAlongWall, wallFrame, findElement } = await import('@/core/scene/query');
+    const { scene } = generateBuilding(STARTERS.find((s) => s.id === starterId)!.program);
+    const ctx = createBuildContext(scene, () => new THREE.MeshStandardMaterial());
+    const block: Collider[] = [];
+    const ground: Collider[] = [];
+    const solid: Collider[] = [];
+    const doorObjs = new Map<string, { obj: THREE.Object3D; box: THREE.Box3 }>();
+    for (const el of scene.elements) {
+      const obj = buildElementObject(el, ctx);
+      const c = obj && WalkPhysics.collider(obj);
+      if (!c) continue;
+      if (el.type !== 'room') solid.push(el.type === 'door' ? { obj: c.obj, box: c.box.clone().expandByScalar(1.1) } : c);
+      if (['wall', 'window', 'column', 'box'].includes(el.type)) block.push(c);
+      if (['slab', 'stair', 'terrain', 'pool', 'roof', 'box'].includes(el.type)) ground.push(c);
+      if (el.type === 'door') doorObjs.set(el.id, c);
+    }
+    // The main (exterior) entrance door.
+    const door = scene.elements.find((e) => e.type === 'door' && (findElement(scene, e.hostId) as { exterior?: boolean })?.exterior && e.doorType !== 'opening');
+    if (!door || door.type !== 'door') throw new Error('no exterior door');
+    const host = findElement(scene, door.hostId);
+    if (!host || host.type !== 'wall') throw new Error('no host');
+    const p = pointAlongWall(host, door.offset);
+    const n = wallFrame(host).normal;
+    const parts = collectDoorParts(doorObjs.get(door.id)!.obj, doorObjs.get(door.id)!.box);
+    expect(parts.length).toBeGreaterThan(0);
+
+    const walkThrough = (open: boolean) => {
+      for (const d of parts) {
+        d.t = 0;
+      }
+      const phys = new WalkPhysics(block, ground, solid);
+      // The wall normal of the generated façade points into the building.
+      // Start 1.5 m outside the door, walk 3.4 m straight through it.
+      phys.feet.set(p.x - n.x * 1.5, 0.05, p.z - n.z * 1.5);
+      for (let i = 0; i < 10; i++) phys.step(new THREE.Vector3(), 0.05);
+      const dir = new THREE.Vector3(n.x, 0, n.z).multiplyScalar(0.085);
+      let minClear = Infinity;
+      for (let i = 0; i < 40; i++) {
+        if (open) animateDoors(parts, phys.feet, 0.05);
+        phys.step(dir, 0.05);
+        // Eye clearance holds at every step.
+        expect(phys.eyeClear(phys.feet.x, phys.feet.y, phys.feet.z)).toBe(true);
+        minClear = Math.min(minClear, Math.hypot(phys.feet.x - p.x, phys.feet.z - p.z));
+      }
+      // Signed distance past the wall plane (positive = inside).
+      return (phys.feet.x - p.x) * n.x + (phys.feet.z - p.z) * n.z;
+    };
+    const passedClosed = walkThrough(false);
+    const passedOpen = walkThrough(true);
+    expect(passedClosed).toBeLessThan(0); // a closed leaf stops the eye outside
+    expect(passedOpen).toBeGreaterThan(1); // an opened door lets you walk in
+    expect(parts.every((d) => d.t > 0.9 || d.t === 0)).toBe(true);
+  });
+});
