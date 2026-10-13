@@ -1,7 +1,7 @@
 'use client';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, Grid, OrthographicCamera, PerformanceMonitor, PerspectiveCamera } from '@react-three/drei';
 import { EffectComposer, N8AO, SMAA } from '@react-three/postprocessing';
 import { useEditor } from '../store/editor';
@@ -75,10 +75,19 @@ function Handles() {
 function Effects({ lowPerf }: { lowPerf: boolean }) {
   const viewMode = useEditor((s) => s.viewMode);
   const walkMode = useEditor((s) => s.walkMode);
+  const gl = useThree((s) => s.gl);
   // Ambient occlusion is the most expensive pass: drop it when the frame rate struggles.
   // Screen-space AO also streaks on thin, close geometry (stair treads, mullions) while
   // moving, so the first-person view renders without it (native MSAA instead).
-  if (viewMode === 'modeling' || lowPerf || walkMode) return null;
+  const active = !(viewMode === 'modeling' || lowPerf || walkMode);
+  // postprocessing's EffectComposer switches the renderer's autoClear off for good when it
+  // is created and never restores it. Without the composer, frames would then be drawn on
+  // top of the previous ones (no colour/depth clear; the sky is a mesh, not a background
+  // colour), smearing every object while the camera moves. Re-enable it every frame.
+  useFrame(() => {
+    if (!active && !gl.autoClear) gl.autoClear = true;
+  });
+  if (!active) return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO halfRes aoRadius={0.9} intensity={2.2} distanceFalloff={0.6} quality="medium" />

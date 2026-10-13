@@ -130,4 +130,12 @@ test('acceptance: prompt → select window → edit → undo → save → reload
   } catch (e) {
     if (!String(e).includes('No module named')) throw e;
   }
+
+  // 15. First-person view after the realistic renderer (with post-processing) has been used:
+  //     every frame must clear colour and depth, otherwise moving the camera smears the image.
+  await page.evaluate(() => (window as any).__AI3D__.getState().set({ viewMode: 'realistic' }));
+  await page.waitForTimeout(3000);
+  await page.evaluate(() => (window as any).__AI3D__.getState().set({ walkMode: true, camera: 'perspective' }));
+  await expect.poll(() => page.evaluate(() => (window as any).__AI3D__.three.gl.autoClear), { timeout: 20_000 }).toBe(true);
+  await page.evaluate(() => (window as any).__AI3D__.getState().set({ walkMode: false }));
 });
