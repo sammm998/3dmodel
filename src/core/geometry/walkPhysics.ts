@@ -57,6 +57,79 @@ export class WalkPhysics {
     return false;
   }
 
+  /**
+   * Headroom at a candidate position: something walkable (a stair flight, a
+   * slab edge, a roof) between step height and just above eye level means the
+   * player would walk into it from below or from the side.
+   */
+  private noHeadroom(x: number, z: number, reach = WALK.radius * 0.7, slope = 1): boolean {
+    const p = new THREE.Vector3(x, this.feet.y + WALK.step + 0.05, z);
+    const objs = this.nearby(this.ground, p, 0.5);
+    if (!objs.length) return false;
+    this.ray.set(p, new THREE.Vector3(0, 1, 0));
+    this.ray.far = WALK.eye + 0.2 - WALK.step;
+    const down = new THREE.Vector3(0, -1, 0);
+    const top = this.feet.y + WALK.eye + 0.2;
+    for (const off of [
+      [0, 0],
+      [reach, 0],
+      [-reach, 0],
+      [0, reach],
+      [0, -reach],
+    ]) {
+      // Underside of something overhead…
+      this.ray.set(new THREE.Vector3(x + off[0], p.y, z + off[1]), new THREE.Vector3(0, 1, 0));
+      this.ray.far = WALK.eye + 0.2 - WALK.step;
+      if (this.ray.intersectObjects(objs, true).length) return true;
+      // …or a surface higher than a step (e.g. a stair flight rising beside the path).
+      this.ray.set(new THREE.Vector3(x + off[0], top, z + off[1]), down);
+      // Rising ground ahead (a flight being climbed) is allowed up to `slope`.
+      const dist = Math.hypot(x + off[0] - this.feet.x, z + off[1] - this.feet.z);
+      this.ray.far = top - (p.y + dist * slope);
+      if (this.ray.far > 0 && this.ray.intersectObjects(objs, true).length) return true;
+    }
+    return false;
+  }
+
+  /** True when the player can stand at (x, z) at the current height without touching anything. */
+  isClear(x: number, z: number, margin = 0.1): boolean {
+    if (this.noHeadroom(x, z, WALK.radius + margin, 0)) return false;
+    const p = new THREE.Vector3(x, this.feet.y, z);
+    const objs = this.nearby(this.block, p, 1);
+    const saved = this.feet.clone();
+    this.feet.set(x, this.feet.y, z);
+    let clear = true;
+    for (let a = 0; a < 8 && clear; a++) {
+      const ang = (a / 8) * Math.PI * 2;
+      if (this.blocked(new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)), margin, objs)) clear = false;
+    }
+    this.feet.copy(saved);
+    return clear;
+  }
+
+  /** Moves the player to the nearest free spot (rings of up to 3 m) on the same floor. */
+  settle(): boolean {
+    const { x, z } = this.feet;
+    if (this.isClear(x, z)) return true;
+    for (let r = 0.2; r <= 3.01; r += 0.2) {
+      for (let a = 0; a < 16; a++) {
+        const ang = (a / 16) * Math.PI * 2;
+        const nx = x + Math.cos(ang) * r;
+        const nz = z + Math.sin(ang) * r;
+        if (!this.isClear(nx, nz)) continue;
+        const saved = this.feet.clone();
+        this.feet.set(nx, this.feet.y, nz);
+        const g = this.groundHeight();
+        if (Math.abs(g - saved.y) < 0.3) {
+          this.feet.y = g;
+          return true;
+        }
+        this.feet.copy(saved);
+      }
+    }
+    return false;
+  }
+
   /** Height of the walkable surface under the player (searching from step height down). */
   groundHeight(): number {
     const objs = this.nearby(this.ground, this.feet, 0.5);
@@ -74,7 +147,11 @@ export class WalkPhysics {
       const d = move[axis];
       if (Math.abs(d) < 1e-7) continue;
       const dir = new THREE.Vector3(axis === 'x' ? Math.sign(d) : 0, 0, axis === 'z' ? Math.sign(d) : 0);
-      if (!this.blocked(dir, Math.abs(d), objs)) this.feet[axis] += d;
+      if (this.blocked(dir, Math.abs(d), objs)) continue;
+      const nx = this.feet.x + (axis === 'x' ? d + Math.sign(d) * WALK.radius : 0);
+      const nz = this.feet.z + (axis === 'z' ? d + Math.sign(d) * WALK.radius : 0);
+      if (this.noHeadroom(nx, nz)) continue;
+      this.feet[axis] += d;
     }
     if (jump && this.onGround) {
       this.vy = WALK.jump;

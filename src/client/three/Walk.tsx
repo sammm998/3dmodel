@@ -67,6 +67,7 @@ export function WalkControls() {
   const feet = useRef(physics.feet);
   const fly = useRef(false);
   const lastLevel = useRef('');
+  const settled = useRef(false);
 
   // Colliders from the rendered element objects.
   useEffect(() => {
@@ -85,9 +86,17 @@ export function WalkControls() {
       }
       physics.block = block;
       physics.ground = ground;
+      // Never start inside or right against geometry (e.g. a stair next to the door).
+      if (!settled.current && !fly.current) {
+        settled.current = true;
+        if (physics.settle()) {
+          camera.position.x = feet.current.x;
+          camera.position.z = feet.current.z;
+        }
+      }
     }, 60);
     return () => clearTimeout(t);
-  }, [revision, physics]);
+  }, [revision, physics, camera]);
 
   // Spawn, wider field of view, input handling.
   useEffect(() => {
@@ -171,6 +180,8 @@ export function WalkControls() {
       return;
     }
 
+    // Wait for the colliders before applying gravity (otherwise the walker drops through the floor).
+    if (!physics.ground.length) return;
     for (let i = 0; i < steps; i++) physics.step(move, dt, k.has('Space'));
     // Fell off the world: respawn.
     const minY = (useEditor.getState().scene.levels[0]?.elevation ?? 0) - 30;
@@ -178,6 +189,7 @@ export function WalkControls() {
       const s = walkSpawn(useEditor.getState().scene);
       f.copy(s.feet);
       physics.vy = 0;
+      physics.settle();
     }
     // Smooth eye height (softens stair steps).
     const eyeY = f.y + EYE;
