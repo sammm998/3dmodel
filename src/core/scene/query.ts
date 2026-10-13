@@ -70,27 +70,43 @@ export function hostedChildren(scene: Scene, id: string): Element[] {
   return scene.elements.filter((e) => 'hostId' in e && e.hostId === id);
 }
 
-/** Endpoint extensions so that walls meeting at a corner close cleanly. */
+/**
+ * Endpoint adjustments so that walls meeting at corners and T-junctions close
+ * cleanly without any coplanar faces (which z-fight, i.e. flicker):
+ * - L corner: the dominant wall (exterior, then taller, then thicker, then id)
+ *   is extended by half the other's thickness and covers the corner; the
+ *   other is trimmed back to the dominant wall's inner face (butt joint).
+ * - T junction (an end on another wall's body): the abutting wall is trimmed
+ *   to that wall's face.
+ * Positive values extend, negative values trim (metres along the wall axis).
+ */
 export function computeWallExtensions(walls: WallElement[], tol = 0.02): Map<string, { start: number; end: number }> {
   const out = new Map<string, { start: number; end: number }>();
+  const dominates = (w: WallElement, o: WallElement) => {
+    if (!!w.exterior !== !!o.exterior) return !!w.exterior;
+    if (Math.abs(w.height - o.height) > 1e-6) return w.height > o.height;
+    if (Math.abs(w.thickness - o.thickness) > 1e-6) return w.thickness > o.thickness;
+    return w.id < o.id;
+  };
   for (const w of walls) {
     const ext = { start: 0, end: 0 };
     for (const key of ['start', 'end'] as const) {
       const p = w[key];
-      let best = 0;
+      let best: number | null = null;
       for (const o of walls) {
         if (o.id === w.id || o.levelId !== w.levelId) continue;
-        // Endpoint-to-endpoint (corner) or endpoint-on-body (T junction).
         const proj = projectOnSegment(p, o.start, o.end);
-        if (proj.dist <= tol) {
-          // Only extend when the walls are not collinear.
-          const a = norm2(sub2(w.end, w.start));
-          const b = norm2(sub2(o.end, o.start));
-          const cross = Math.abs(a.x * b.z - a.z * b.x);
-          if (cross > 0.2) best = Math.max(best, o.thickness / 2);
-        }
+        if (proj.dist > tol) continue;
+        // Collinear continuations need no adjustment.
+        const a = norm2(sub2(w.end, w.start));
+        const b = norm2(sub2(o.end, o.start));
+        const cross = Math.abs(a.x * b.z - a.z * b.x);
+        if (cross <= 0.2) continue;
+        const atCorner = dist2(p, o.start) <= tol || dist2(p, o.end) <= tol;
+        const v = atCorner && dominates(w, o) ? o.thickness / 2 : -o.thickness / 2;
+        best = best === null ? v : Math.max(best, v);
       }
-      ext[key] = best;
+      ext[key] = best ?? 0;
     }
     out.set(w.id, ext);
   }

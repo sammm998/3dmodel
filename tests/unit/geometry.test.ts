@@ -19,10 +19,41 @@ describe('parametric geometry', () => {
     const ctx = createBuildContext(scene, mat);
     const north = scene.elements.find((e) => e.type === 'wall' && e.name.startsWith('North')) as WallElement;
     const b = bbox(buildElementObject(north, ctx)!);
-    // 6 m + two half-thickness corner extensions, 2.7 m high, centred on z = -2
-    expect(b.max.x - b.min.x).toBeCloseTo(6 + 0.25, 3);
+    // Butt-jointed corners: 6 m ± a half-thickness depending on which wall covers the corner.
+    expect([6 - 0.25, 6 + 0.25].some((l) => Math.abs(b.max.x - b.min.x - l) < 1e-3)).toBe(true);
     expect(b.max.y - b.min.y).toBeCloseTo(2.7, 3);
     expect((b.max.z + b.min.z) / 2).toBeCloseTo(-2, 3);
+  });
+
+  it('closes corners exactly: no gaps and no overlapping (z-fighting) volumes', () => {
+    const ctx = createBuildContext(scene, mat);
+    const walls = scene.elements.filter((e): e is WallElement => e.type === 'wall');
+    // Wall bodies without their openings (boxes only measure extents).
+    const boxes = walls.map((w) => bbox(buildElementObject(w, ctx)!));
+    const union = boxes.reduce((u, b) => u.union(b), new THREE.Box3());
+    expect(union.max.x - union.min.x).toBeCloseTo(6.25, 3);
+    expect(union.max.z - union.min.z).toBeCloseTo(4.25, 3);
+    const volume = boxes.reduce((v, b) => v + (b.max.x - b.min.x) * (b.max.y - b.min.y) * (b.max.z - b.min.z), 0);
+    expect(volume).toBeCloseTo((6.25 * 4.25 - 5.75 * 3.75) * 2.7, 3);
+  });
+
+  it('trims interior walls at T-junctions to the inner face of the exterior wall', async () => {
+    const { STARTERS } = await import('@/core/generator/starters');
+    const villa = generateBuilding(STARTERS.find((s) => s.id === 'scandinavian-villa')!.program).scene;
+    const vctx = createBuildContext(villa, mat);
+    const exterior = villa.elements.filter((e): e is WallElement => e.type === 'wall' && !!e.exterior);
+    const interior = villa.elements.filter((e): e is WallElement => e.type === 'wall' && !e.exterior);
+    expect(interior.length).toBeGreaterThan(3);
+    for (const w of interior) {
+      const ib = bbox(buildElementObject(w, vctx)!);
+      for (const x of exterior.filter((e) => e.levelId === w.levelId)) {
+        const xb = bbox(buildElementObject(x, vctx)!);
+        // Never reaching an exterior wall's outer face (which would show as a stripe on the façade).
+        const horizontal = Math.abs(x.start.z - x.end.z) < 1e-6;
+        if (!ib.intersectsBox(xb)) continue;
+        if (horizontal) expect(ib.max.z <= xb.max.z - 0.05 && ib.min.z >= xb.min.z + 0.05 || ib.max.z <= xb.min.z + 1e-6 || ib.min.z >= xb.max.z - 1e-6).toBe(true);
+      }
+    }
   });
 
   it('cuts real openings into host walls', () => {
