@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { useThree } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
@@ -65,12 +65,54 @@ function EnvironmentMap({ intensity }: { intensity: number }) {
   return null;
 }
 
+const WALK_SHADOW_HALF = 14;
+
+/**
+ * First-person shadows: a tight shadow frustum that follows the walker (about
+ * 3x the texel density of the whole-site frustum), moved in whole shadow-map
+ * texels so shadow edges do not swim while walking.
+ */
+function WalkShadowFollow({ light, sunDir, radius, size }: { light: React.RefObject<THREE.DirectionalLight | null>; sunDir: THREE.Vector3; radius: number; size: number }) {
+  const { camera } = useThree();
+  const target = useMemo(() => new THREE.Vector3(), []);
+  useEffect(() => {
+    const l = light.current;
+    if (!l) return;
+    const cam = l.shadow.camera;
+    cam.left = cam.bottom = -WALK_SHADOW_HALF;
+    cam.right = cam.top = WALK_SHADOW_HALF;
+    cam.updateProjectionMatrix();
+    return () => {
+      cam.left = cam.bottom = -radius * 1.3;
+      cam.right = cam.top = radius * 1.3;
+      cam.updateProjectionMatrix();
+    };
+  }, [light, radius]);
+  useFrame(() => {
+    const l = light.current;
+    if (!l) return;
+    // Snap the focus point to the shadow texel grid in light space.
+    const texel = (WALK_SHADOW_HALF * 2) / size;
+    // Same orientation as the shadow camera (looks from the sun towards its target, +Y up).
+    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(sunDir, new THREE.Vector3(), new THREE.Vector3(0, 1, 0)));
+    const inv = q.clone().invert();
+    target.copy(camera.position).applyQuaternion(inv);
+    target.set(Math.round(target.x / texel) * texel, Math.round(target.y / texel) * texel, target.z).applyQuaternion(q);
+    l.target.position.copy(target);
+    l.target.updateMatrixWorld();
+    l.position.copy(target).addScaledVector(sunDir, radius * 3);
+  });
+  return null;
+}
+
 export function Lighting() {
   const viewMode = useEditor((s) => s.viewMode);
   const settings = useEditor((s) => s.scene.settings);
   const scene = useEditor((s) => s.scene);
   const { gl } = useThree();
   const realistic = viewMode !== 'modeling';
+  const walkMode = useEditor((s) => s.walkMode);
+  const sunRef = useRef<THREE.DirectionalLight>(null);
   const preset = ENV_PRESETS[settings.environment];
 
   const b = useMemo(() => sceneBounds(scene), [scene]);
@@ -100,14 +142,15 @@ export function Lighting() {
           <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} />
           <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI]} />
           <directionalLight
+            ref={sunRef}
             position={sunPos}
             intensity={preset.sunI}
             color={preset.sun}
             castShadow
             shadow-mapSize-width={shadowSize}
             shadow-mapSize-height={shadowSize}
-            shadow-bias={-0.0002}
-            shadow-normalBias={0.03}
+            shadow-bias={-0.0004}
+            shadow-normalBias={0.045}
             shadow-camera-left={-radius * 1.3}
             shadow-camera-right={radius * 1.3}
             shadow-camera-top={radius * 1.3}
@@ -116,6 +159,7 @@ export function Lighting() {
             shadow-camera-far={radius * 8}
             target={target}
           />
+          {walkMode ? <WalkShadowFollow light={sunRef} sunDir={sunDir} radius={radius} size={shadowSize} /> : null}
           {settings.environment === 'night' ? <pointLight position={[center.x, 2.2, center.z]} intensity={20} distance={18} color="#ffcf94" /> : null}
         </group>
       ) : (

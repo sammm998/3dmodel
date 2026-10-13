@@ -55,15 +55,28 @@ function Handles() {
         const hit = ray.intersectObjects(objs, true).find((h) => h.object.userData.elementId && !h.object.userData.helper);
         return hit ? (hit.object.userData.elementId as string) : null;
       },
+      /** Test hook: place the orbit camera (ignored in walk mode). */
+      setView: (pos: [number, number, number], target: [number, number, number]) => {
+        const c = viewportHandles.controls as { target: THREE.Vector3; update: () => void } | undefined;
+        camera.position.set(...pos);
+        if (c) {
+          c.target.set(...target);
+          c.update();
+        } else camera.lookAt(...target);
+      },
+      three: { gl, scene, camera },
     };
-  }, [camera, gl, size]);
+  }, [camera, gl, size, scene]);
   return null;
 }
 
 function Effects({ lowPerf }: { lowPerf: boolean }) {
   const viewMode = useEditor((s) => s.viewMode);
+  const walkMode = useEditor((s) => s.walkMode);
   // Ambient occlusion is the most expensive pass: drop it when the frame rate struggles.
-  if (viewMode === 'modeling' || lowPerf) return null;
+  // Screen-space AO also streaks on thin, close geometry (stair treads, mullions) while
+  // moving, so the first-person view renders without it (native MSAA instead).
+  if (viewMode === 'modeling' || lowPerf || walkMode) return null;
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO halfRes aoRadius={0.9} intensity={2.2} distanceFalloff={0.6} quality="medium" />
@@ -149,16 +162,13 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
           </GizmoHelper>
         ) : null}
         <Effects lowPerf={lowPerf} />
+        {/* Degrade once and stay there: toggling quality back and forth is itself visible flicker. */}
         <PerformanceMonitor
-          onIncline={() => {
-            setDpr(Math.min(2, window.devicePixelRatio || 1));
-            setLowPerf(false);
-          }}
           onDecline={() => {
             setDpr(1);
             setLowPerf(true);
           }}
-          flipflops={3}
+          flipflops={1}
           onFallback={() => {
             setDpr(1);
             setLowPerf(true);
