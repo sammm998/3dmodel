@@ -19,6 +19,7 @@ const KEYS: [string, string][] = [
 export function WalkHud() {
   const locked = useEditor((s) => s.walkLocked);
   const info = useEditor((s) => s.walkInfo);
+  const stats = useEditor((s) => s.walkStats);
   return (
     <div className="pointer-events-none absolute inset-0 z-20" data-testid="walk-hud">
       {locked ? (
@@ -30,6 +31,10 @@ export function WalkHud() {
           </div>
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-black/45 px-4 py-1.5 text-[11.5px] text-ink-200 backdrop-blur">
             WASD walk · Shift run · E/Q change floor · Esc pause
+          </div>
+          {/* Diagnostics: which build is running, how fast, on which GPU. */}
+          <div className="absolute bottom-4 right-4 rounded bg-black/40 px-2 py-1 font-mono text-[10px] text-ink-300" data-testid="walk-stats">
+            build {process.env.NEXT_PUBLIC_BUILD_ID} · {stats.fps || '–'} fps{stats.gpu ? ` · ${stats.gpu}` : ''}
           </div>
         </>
       ) : (

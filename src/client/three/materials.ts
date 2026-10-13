@@ -258,6 +258,12 @@ export class MaterialManager {
   constructor(
     public style: RenderStyle,
     private custom: CustomMaterial[] = [],
+    /**
+     * 'transmission' (refractive glass/water, an extra render pass) only for still
+     * presentation views; 'transparent' everywhere else: stable when the camera is
+     * close to or moving past glass, and much cheaper.
+     */
+    private glass: 'transmission' | 'transparent' = 'transparent',
   ) {}
 
   get = (ref: string): THREE.Material => {
@@ -280,6 +286,34 @@ export class MaterialManager {
       if (isGlass) return new THREE.MeshStandardMaterial({ name: def.id, color: '#9cc6e6', transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0, depthWrite: false });
       if (def.id === 'water') return new THREE.MeshStandardMaterial({ name: def.id, color: '#7fc4d8', transparent: true, opacity: 0.6, roughness: 0.2, depthWrite: false });
       return new THREE.MeshStandardMaterial({ name: def.id, color: technicalColor(def), roughness: 0.92, metalness: 0.0 });
+    }
+    if (isGlass && this.glass === 'transparent') {
+      return new THREE.MeshPhysicalMaterial({
+        name: def.id,
+        color: def.color,
+        roughness: def.id.includes('frosted') ? def.roughness : Math.min(def.roughness, 0.08),
+        metalness: 0,
+        transparent: true,
+        opacity: def.id.includes('frosted') ? 0.6 : 0.22,
+        envMapIntensity: 1.3,
+        specularIntensity: 1,
+        depthWrite: false,
+      });
+    }
+    if (def.id === 'water' && this.glass === 'transparent') {
+      const tex = texturesFor(def);
+      return new THREE.MeshStandardMaterial({
+        name: def.id,
+        color: def.color,
+        roughness: 0.05,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.82,
+        bumpMap: tex?.bump ?? null,
+        bumpScale: 0.4,
+        envMapIntensity: 1.4,
+        depthWrite: false,
+      });
     }
     if (isGlass) {
       return new THREE.MeshPhysicalMaterial({

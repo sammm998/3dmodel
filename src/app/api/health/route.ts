@@ -12,7 +12,7 @@ export async function GET() {
   let storageOk = true;
   let storageError: string | null = null;
   try {
-    await repo.listProjects();
+    await repo.countUsers();
   } catch (e) {
     storageOk = false;
     storageError = e instanceof Error && e.message ? e.message : String(e);
@@ -20,6 +20,7 @@ export async function GET() {
   }
   return json({
     ok: true,
+    build: process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev',
     storage: status.kind,
     storageOk,
     storageError,

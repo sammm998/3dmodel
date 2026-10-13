@@ -61,6 +61,8 @@ export interface EditorState {
   /** Pointer is locked into the walk view. */
   walkLocked: boolean;
   walkInfo: { level: string; fly: boolean };
+  /** Diagnostics shown in the walk HUD (frames per second, GPU). */
+  walkStats: { fps: number; gpu: string };
   showGrid: boolean;
   showLabels: boolean;
   snap: boolean;
@@ -125,6 +127,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   walkMode: false,
   walkLocked: false,
   walkInfo: { level: '', fly: false },
+  walkStats: { fps: 0, gpu: '' },
   showGrid: true,
   showLabels: true,
   snap: true,

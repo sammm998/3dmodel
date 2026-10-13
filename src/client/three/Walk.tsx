@@ -12,9 +12,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { PointerLockControls } from '@react-three/drei';
 import { useEditor } from '../store/editor';
-import { objectRegistry, viewportHandles } from './registry';
+import { objectRegistry, onRegistryChange, viewportHandles } from './registry';
 import { elementsOfType, findElement, levelOf, pointAlongWall, sceneBounds, wallFrame } from '@/core/scene/query';
 import { polygonArea, polygonCentroid } from '@/core/geometry/math2d';
 import type { Scene } from '@/core/schema/scene';
@@ -23,6 +22,7 @@ import { WALK, WalkPhysics, type Collider } from '@/core/geometry/walkPhysics';
 import { animateDoors, collectDoorParts, resetDoors, type DoorPart } from '@/core/geometry/doorMotion';
 
 const EYE = WALK.eye;
+const MOUSE_SENSITIVITY = 0.0022;
 
 const BLOCKING: ElementType[] = ['wall', 'window', 'column', 'furniture', 'box'];
 const GROUND: ElementType[] = ['slab', 'stair', 'terrain', 'pool', 'roof', 'box'];
@@ -62,7 +62,6 @@ export function walkSpawn(scene: Scene): { feet: THREE.Vector3; look: THREE.Vect
 
 export function WalkControls() {
   const { camera, gl } = useThree();
-  const revision = useEditor((s) => s.revision);
   const keys = useRef(new Set<string>());
   const physics = useMemo(() => new WalkPhysics(), []);
   const feet = useRef(physics.feet);
@@ -70,10 +69,15 @@ export function WalkControls() {
   const lastLevel = useRef('');
   const settled = useRef(false);
   const doors = useRef<DoorPart[]>([]);
+  // Mouse look: raw pointer-lock input, spikes discarded, smoothed, never any roll.
+  const lookRef = useRef({ yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0 });
+  const fps = useRef({ frames: 0, time: 0 });
 
-  // Colliders from the rendered element objects.
+  // Colliders (and animated doors) from the rendered element objects; rebuilt whenever
+  // objects are rebuilt (edits, material/style changes when entering walk mode).
   useEffect(() => {
-    const t = setTimeout(() => {
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const rebuild = () => {
       const scene = useEditor.getState().scene;
       const block: Collider[] = [];
       const ground: Collider[] = [];
@@ -105,27 +109,41 @@ export function WalkControls() {
           camera.position.z = feet.current.z;
         }
       }
-    }, 60);
-    return () => clearTimeout(t);
-  }, [revision, physics, camera]);
+    };
+    const schedule = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(rebuild, 60);
+    };
+    schedule();
+    const off = onRegistryChange(schedule);
+    return () => {
+      off();
+      if (t) clearTimeout(t);
+    };
+  }, [physics, camera]);
 
   // Spawn, wider field of view, input handling.
   useEffect(() => {
     const st = useEditor.getState();
     const { feet: f, look } = walkSpawn(st.scene);
+    const lookState = lookRef;
     feet.current.copy(f);
     physics.vy = 0;
     camera.position.set(f.x, f.y + EYE, f.z);
     camera.up.set(0, 1, 0);
     camera.lookAt(f.x + look.x * 5, f.y + EYE, f.z + look.z * 5);
+    {
+      const e = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+      lookState.current = { yaw: e.y, pitch: e.x, targetYaw: e.y, targetPitch: e.x };
+    }
     const persp = camera as THREE.PerspectiveCamera;
     const prevFov = persp.fov;
     const prevNear = camera.near;
     if (persp.isPerspectiveCamera) {
       persp.fov = 70;
-      // The eye keeps WALK.eyeClearance (15 cm) from every surface, so a 5 cm near
+      // The eye keeps WALK.eyeClearance (15 cm) from every surface, so an 8 cm near
       // plane can never slice through geometry.
-      persp.near = 0.05;
+      persp.near = 0.08;
       persp.updateProjectionMatrix();
     }
     const changeLevel = (dir: 1 | -1) => {
@@ -148,10 +166,53 @@ export function WalkControls() {
     };
     const up = (e: KeyboardEvent) => keys.current.delete(e.code);
     const blur = () => keys.current.clear();
+    const el = gl.domElement;
+    const locked = () => document.pointerLockElement === el;
+    const requestLock = () => {
+      // Raw (unaccelerated) mouse input where supported; plain pointer lock otherwise.
+      try {
+        const r = (el.requestPointerLock as (o?: { unadjustedMovement?: boolean }) => Promise<void> | void)({ unadjustedMovement: true });
+        if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch(() => el.requestPointerLock());
+      } catch {
+        el.requestPointerLock();
+      }
+    };
+    const onClick = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('#walk-lock') || (t === el && !locked())) requestLock();
+    };
+    const onLockChange = () => {
+      useEditor.getState().set({ walkLocked: locked() });
+      if (!locked()) keys.current.clear();
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!locked()) return;
+      // Chrome occasionally reports huge spurious deltas under pointer lock: drop them.
+      if (Math.abs(e.movementX) > 250 || Math.abs(e.movementY) > 250) return;
+      const L = lookRef.current;
+      L.targetYaw -= e.movementX * MOUSE_SENSITIVITY;
+      L.targetPitch = Math.max(-1.45, Math.min(1.45, L.targetPitch - e.movementY * MOUSE_SENSITIVITY));
+    };
+    document.addEventListener('click', onClick);
+    document.addEventListener('pointerlockchange', onLockChange);
+    document.addEventListener('mousemove', onMove);
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
     window.addEventListener('blur', blur);
+    // GPU name for the diagnostics line in the HUD.
+    try {
+      const ctx = gl.getContext();
+      const ext = ctx.getExtension('WEBGL_debug_renderer_info');
+      const gpu = ext ? String(ctx.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+      useEditor.getState().set({ walkStats: { fps: 0, gpu: gpu.replace(/^ANGLE \((.*)\)$/, '$1').slice(0, 60) } });
+    } catch {
+      /* not available */
+    }
     return () => {
+      document.removeEventListener('click', onClick);
+      document.removeEventListener('pointerlockchange', onLockChange);
+      document.removeEventListener('mousemove', onMove);
+      if (locked()) document.exitPointerLock();
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
       window.removeEventListener('blur', blur);
@@ -167,13 +228,27 @@ export function WalkControls() {
       viewportHandles.walkExit = { position: camera.position.clone(), target: camera.position.clone().add(dir.multiplyScalar(4)) };
       useEditor.getState().set({ walkLocked: false });
     };
-  }, [camera, physics]);
+  }, [camera, physics, gl]);
 
   useFrame((_, rawDt) => {
     // Frame-rate independent: slow frames are split into small physics steps.
     const total = Math.min(rawDt, 0.25);
     const steps = Math.max(1, Math.ceil(total / 0.05));
     const dt = total / steps;
+    // Smoothed mouse look (critically damped towards the raw target; ~30 ms).
+    const L = lookRef.current;
+    const a = 1 - Math.exp(-rawDt * 35);
+    L.yaw += (L.targetYaw - L.yaw) * a;
+    L.pitch += (L.targetPitch - L.pitch) * a;
+    camera.quaternion.setFromEuler(new THREE.Euler(L.pitch, L.yaw, 0, 'YXZ'));
+    // Frames per second for the HUD diagnostics (updated once a second).
+    fps.current.frames++;
+    fps.current.time += rawDt;
+    if (fps.current.time >= 1) {
+      const st = useEditor.getState();
+      st.set({ walkStats: { ...st.walkStats, fps: Math.round(fps.current.frames / fps.current.time) } });
+      fps.current = { frames: 0, time: 0 };
+    }
     const k = keys.current;
     const f = feet.current;
     const forward = new THREE.Vector3();
@@ -223,13 +298,5 @@ export function WalkControls() {
     }
   });
 
-  return (
-    <PointerLockControls
-      makeDefault
-      selector="#walk-lock"
-      domElement={gl.domElement}
-      onLock={() => useEditor.getState().set({ walkLocked: true })}
-      onUnlock={() => useEditor.getState().set({ walkLocked: false })}
-    />
-  );
+  return null;
 }

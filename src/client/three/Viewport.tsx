@@ -104,8 +104,9 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const style = viewMode === 'modeling' ? 'technical' : 'realistic';
   // Keyed on content, not identity: every edit clones the scene, which must not rebuild all materials.
   const customKey = JSON.stringify(customMaterials);
+  const glassMode = viewMode === 'presentation' && !walkMode ? 'transmission' : 'transparent';
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const materials = useMemo(() => new MaterialManager(style, customMaterials), [style, customKey]);
+  const materials = useMemo(() => new MaterialManager(style, customMaterials, glassMode), [style, customKey, glassMode]);
   useEffect(() => () => materials.dispose(), [materials]);
   useEffect(() => {
     viewportHandles.container = containerRef.current;

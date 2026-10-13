@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { useFrame, useThree } from '@react-three/fiber';
+import { useThree } from '@react-three/fiber';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
@@ -82,46 +82,6 @@ function SceneFog({ color, near, far }: { color: string; near: number; far: numb
   return null;
 }
 
-const WALK_SHADOW_HALF = 14;
-
-/**
- * First-person shadows: a tight shadow frustum that follows the walker (about
- * 3x the texel density of the whole-site frustum), moved in whole shadow-map
- * texels so shadow edges do not swim while walking.
- */
-function WalkShadowFollow({ light, sunDir, radius, size }: { light: React.RefObject<THREE.DirectionalLight | null>; sunDir: THREE.Vector3; radius: number; size: number }) {
-  const { camera } = useThree();
-  const target = useMemo(() => new THREE.Vector3(), []);
-  useEffect(() => {
-    const l = light.current;
-    if (!l) return;
-    const cam = l.shadow.camera;
-    cam.left = cam.bottom = -WALK_SHADOW_HALF;
-    cam.right = cam.top = WALK_SHADOW_HALF;
-    cam.updateProjectionMatrix();
-    return () => {
-      cam.left = cam.bottom = -radius * 1.3;
-      cam.right = cam.top = radius * 1.3;
-      cam.updateProjectionMatrix();
-    };
-  }, [light, radius]);
-  useFrame(() => {
-    const l = light.current;
-    if (!l) return;
-    // Snap the focus point to the shadow texel grid in light space.
-    const texel = (WALK_SHADOW_HALF * 2) / size;
-    // Same orientation as the shadow camera (looks from the sun towards its target, +Y up).
-    const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(sunDir, new THREE.Vector3(), new THREE.Vector3(0, 1, 0)));
-    const inv = q.clone().invert();
-    target.copy(camera.position).applyQuaternion(inv);
-    target.set(Math.round(target.x / texel) * texel, Math.round(target.y / texel) * texel, target.z).applyQuaternion(q);
-    l.target.position.copy(target);
-    l.target.updateMatrixWorld();
-    l.position.copy(target).addScaledVector(sunDir, radius * 3);
-  });
-  return null;
-}
-
 export function Lighting() {
   const viewMode = useEditor((s) => s.viewMode);
   const settings = useEditor((s) => s.scene.settings);
@@ -139,7 +99,8 @@ export function Lighting() {
   const el = THREE.MathUtils.degToRad(settings.sunElevation);
   const sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
   const sunPos = center.clone().add(sunDir.clone().multiplyScalar(radius * 3));
-  const groundY = (scene.levels[0]?.elevation ?? 0) - 0.2;
+  // Well below the site terrain (-0.15) so the two never compete for depth at a distance.
+  const groundY = (scene.levels[0]?.elevation ?? 0) - 0.45;
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -163,14 +124,16 @@ export function Lighting() {
             <circleGeometry args={[radius * 40, 64]} />
             <meshStandardMaterial color={preset.ground} roughness={1} metalness={0} />
           </mesh>
-          <EnvironmentMap intensity={settings.environment === 'night' ? 0.15 : 0.55} />
-          <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI]} />
+          {/* First person: no sun shadows (shadow maps alias badly at arm's length and shimmer
+              while moving) and softer, more even light instead. */}
+          <EnvironmentMap intensity={(settings.environment === 'night' ? 0.15 : 0.55) * (walkMode ? 1.5 : 1)} />
+          <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI * (walkMode ? 1.6 : 1)]} />
           <directionalLight
             ref={sunRef}
             position={sunPos}
-            intensity={preset.sunI}
+            intensity={preset.sunI * (walkMode ? 0.45 : 1)}
             color={preset.sun}
-            castShadow
+            castShadow={!walkMode}
             shadow-mapSize-width={shadowSize}
             shadow-mapSize-height={shadowSize}
             shadow-bias={-0.0004}
@@ -183,7 +146,6 @@ export function Lighting() {
             shadow-camera-far={radius * 8}
             target={target}
           />
-          {walkMode ? <WalkShadowFollow light={sunRef} sunDir={sunDir} radius={radius} size={shadowSize} /> : null}
           {settings.environment === 'night' ? <pointLight position={[center.x, 2.2, center.z]} intensity={20} distance={18} color="#ffcf94" /> : null}
         </group>
       ) : (

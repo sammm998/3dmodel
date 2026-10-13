@@ -8,7 +8,7 @@ import type { Element } from '@/core/schema/elements';
 import type { Scene } from '@/core/schema/scene';
 import { levelOf } from '@/core/scene/query';
 import { MaterialManager } from './materials';
-import { objectRegistry } from './registry';
+import { notifyRegistryChange, objectRegistry } from './registry';
 
 function disposeObject(o: THREE.Object3D) {
   o.traverse((c) => {
@@ -55,8 +55,10 @@ const ElementNode = memo(function ElementNode({ el, ctx, depKey, onClick, onOver
   useLayoutEffect(() => {
     if (!obj) return;
     objectRegistry.set(el.id, obj);
+    notifyRegistryChange();
     return () => {
       if (objectRegistry.get(el.id) === obj) objectRegistry.delete(el.id);
+      notifyRegistryChange();
     };
   }, [obj, el.id]);
   useEffect(() => () => {

@@ -1,3 +1,16 @@
+import { execSync } from 'node:child_process';
+
+/** Short commit id of this build (Railway provides it; locally read from git). */
+function buildId() {
+  const env = process.env.RAILWAY_GIT_COMMIT_SHA || process.env.SOURCE_VERSION || process.env.GIT_COMMIT;
+  if (env) return env.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return 'dev';
+  }
+}
+
 /** @type {import('next').NextConfig} */
 const securityHeaders = [
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -9,6 +22,7 @@ const securityHeaders = [
 
 const nextConfig = {
   reactStrictMode: true,
+  env: { NEXT_PUBLIC_BUILD_ID: buildId() },
   poweredByHeader: false,
   transpilePackages: ['three'],
   serverExternalPackages: ['pg'],
