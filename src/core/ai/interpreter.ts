@@ -389,14 +389,14 @@ interface ClauseResult {
 }
 
 const DIM_WORDS: { re: RegExp; prop: 'width' | 'height' | 'length' | 'thickness' | 'depth' }[] = [
-  { re: /\b(wide|width|wider|narrower|bred|brett|bredare|smalare|bredd)\b/, prop: 'width' },
+  { re: /\b(wide|width|wider|widen|narrower|narrow|bred|brett|bredare|bredda|smalare|bredd)\b/, prop: 'width' },
   { re: /\b(tall|high|height|taller|higher|shorter|lower|hög|högt|högre|lägre|höjd)\b/, prop: 'height' },
   { re: /\b(long|length|longer|lång|långt|längre|kortare|längd)\b/, prop: 'length' },
   { re: /\b(thick|thickness|thicker|thinner|tjock|tjockare|tunnare|tjocklek)\b/, prop: 'thickness' },
   { re: /\b(deep|depth|deeper|shallower|djup|djupare|djup)\b/, prop: 'depth' },
 ];
-const SHRINK = /\b(narrower|shorter|lower|smaller|thinner|shallower|smalare|lägre|kortare|mindre|tunnare|grundare|decrease|reduce|minska)\b/;
-const GROW = /\b(wider|taller|higher|longer|bigger|larger|thicker|deeper|bredare|högre|längre|större|tjockare|djupare|increase|öka|extend|förläng)\b/;
+const SHRINK = /\b(narrower|shorter|lower|smaller|thinner|shallower|smalare|lägre|kortare|mindre|tunnare|grundare|decrease|reduce|minska|narrow|shorten|shrink|krymp|minska)\b/;
+const GROW = /\b(wider|taller|higher|longer|bigger|larger|thicker|deeper|bredare|högre|längre|större|tjockare|djupare|increase|öka|extend|förläng|widen|lengthen|enlarge|bredda|förstora)\b/;
 
 /** Maps a generic dimension word to the element's real property. */
 function mapDim(el: Element, prop: string): string | undefined {
@@ -811,7 +811,10 @@ function dimensionOps(clause: string, targets: Element[], lang: 'en' | 'sv'): { 
   const abs1 = clause.match(new RegExp(`${NUM}\\s*${UNIT}\\s*(wide|tall|high|long|thick|deep|in width|in height|bred|brett|hög|högt|lång|långt|tjock|djup|djupt)\\b`));
   const abs2 = clause.match(new RegExp(`\\b(width|height|length|thickness|depth|bredd(?:en)?|höjd(?:en)?|längd(?:en)?|tjocklek(?:en)?|djup(?:et)?)\\s*(?:of|to|=|:|till|på)?\\s*${NUM}\\s*${UNIT}`));
   const pct = clause.match(/(\d+(?:[.,]\d+)?)\s*(?:%|percent|procent)/);
-  const by = clause.match(new RegExp(`\\b(?:by|med)\\s*${NUM}\\s*${UNIT}\\b`));
+  // "by 40 cm" / "med 40 cm", or a length directly before a comparative: "40 cm wider", "0,5 m lägre".
+  const by =
+    clause.match(new RegExp(`\\b(?:by|med)\\s*${NUM}\\s*${UNIT}\\b`)) ??
+    clause.match(new RegExp(`${NUM}\\s*(mm|cm|dm|m|meters?|metres?|meter|millimet(?:er|re)s?|centimet(?:er|re)s?)\\s+(?=(?:wider|narrower|taller|shorter|higher|lower|longer|thicker|thinner|deeper|shallower|bigger|larger|smaller|bredare|smalare|högre|lägre|längre|kortare|tjockare|tunnare|djupare|grundare|större|mindre)\\b)`));
   const wordToProp = (w: string) => DIM_WORDS.find((d) => d.re.test(w))?.prop;
 
   if ((abs1 || abs2) && !pct) {

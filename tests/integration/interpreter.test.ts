@@ -127,3 +127,15 @@ describe('bare building descriptions', () => {
     expect(applied.scene.elements.filter((e) => e.type === 'stair')).toHaveLength(4);
   });
 });
+
+describe('relative lengths', () => {
+  it('applies "40 cm wider" / "40 cm bredare" as an absolute delta, not a default percentage', () => {
+    const base = run(emptyScene(), 'Create a rectangular room 6m long and 4m wide with one window').applied.scene;
+    const win = base.elements.find((e): e is WindowElement => e.type === 'window')!;
+    for (const text of ['Make this window 40 cm wider', 'gör fönstret 40 cm bredare', 'widen it by 0.4 m']) {
+      const { applied } = run(base, text, [win.id]);
+      expect(applied.ok, text).toBe(true);
+      expect((findElement(applied.scene, win.id) as WindowElement).width, text).toBeCloseTo(win.width + 0.4, 4);
+    }
+  });
+});
