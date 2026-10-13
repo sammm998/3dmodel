@@ -2,22 +2,19 @@
 import { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 
 const ENV_PRESETS = {
-  day: { ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.0, sun: '#fff4e2', sunI: 3.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
-  sunset: { ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.0, sun: '#ffc796', sunI: 2.8, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
-  overcast: { ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.05, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
-  night: { ground: '#1a1d1a', top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 0.8, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
+  day: { sky: { turbidity: 2.6, rayleigh: 1.3, mie: 0.004, mieG: 0.82, intensity: 0.62 }, ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.45, sun: '#fff1dc', sunI: 4.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
+  sunset: { sky: { turbidity: 5, rayleigh: 2.2, mie: 0.006, mieG: 0.86, intensity: 0.7 }, ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.45, sun: '#ffc290', sunI: 3.8, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
+  overcast: { sky: null, ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.5, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
+  night: { sky: null, ground: '#1a1d1a', top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 1.1, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
 };
 
-/** Gradient sky dome with a soft sun glow (tone-mapping friendly). */
-function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: string; bottom: string; sunDir: THREE.Vector3 }) {
-  const mat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
+function gradientSkyMaterial(c: { top: string; horizon: string; bottom: string }, sunDir: THREE.Vector3): THREE.ShaderMaterial {
+  const m = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
         uniforms: {
@@ -34,9 +31,19 @@ function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: s
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
           }`,
-      }),
-    [],
-  );
+  });
+  m.uniforms.top.value.set(c.top).convertSRGBToLinear();
+  m.uniforms.horizon.value.set(c.horizon).convertSRGBToLinear();
+  m.uniforms.bottom.value.set(c.bottom).convertSRGBToLinear();
+  m.uniforms.sunDir.value.copy(sunDir);
+  return m;
+}
+
+/** Gradient sky dome with a soft sun glow (overcast and night). */
+function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: string; bottom: string; sunDir: THREE.Vector3 }) {
+  // Created once; colours are updated in place below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mat = useMemo(() => gradientSkyMaterial({ top, horizon, bottom }, sunDir), []);
   mat.uniforms.top.value.set(top).convertSRGBToLinear();
   mat.uniforms.horizon.value.set(horizon).convertSRGBToLinear();
   mat.uniforms.bottom.value.set(bottom).convertSRGBToLinear();
@@ -48,23 +55,129 @@ function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: s
   );
 }
 
-/** Image-based reflections without network assets (procedural room environment). */
-function EnvironmentMap({ intensity }: { intensity: number }) {
+type SkyParams = { turbidity: number; rayleigh: number; mie: number; mieG: number; intensity: number };
+
+/** Physically based (Preetham) atmosphere; brightness scaled to sit with the scene's sun light. */
+function physicalSkyMaterial(p: SkyParams, sunDir: THREE.Vector3): THREE.ShaderMaterial {
+  const shader = (Sky as unknown as { SkyShader: { uniforms: Record<string, THREE.IUniform>; vertexShader: string; fragmentShader: string } }).SkyShader;
+  const mat = new THREE.ShaderMaterial({
+    name: 'PhysicalSky',
+    uniforms: { ...THREE.UniformsUtils.clone(shader.uniforms), skyIntensity: { value: p.intensity } },
+    vertexShader: shader.vertexShader,
+    fragmentShader: shader.fragmentShader
+      .replace('uniform vec3 up;', 'uniform vec3 up;\nuniform float skyIntensity;')
+      .replace('gl_FragColor = vec4( retColor, 1.0 );', 'gl_FragColor = vec4( retColor * skyIntensity, 1.0 );'),
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  mat.uniforms.turbidity.value = p.turbidity;
+  mat.uniforms.rayleigh.value = p.rayleigh;
+  mat.uniforms.mieCoefficient.value = p.mie;
+  mat.uniforms.mieDirectionalG.value = p.mieG;
+  mat.uniforms.sunPosition.value.copy(sunDir).multiplyScalar(1000);
+  return mat;
+}
+
+function PhysicalSky({ params, sunDir }: { params: SkyParams; sunDir: THREE.Vector3 }) {
+  const key = `${JSON.stringify(params)}|${sunDir.toArray().map((v) => v.toFixed(4)).join(',')}`;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const mat = useMemo(() => physicalSkyMaterial(params, sunDir), [key]);
+  useEffect(() => () => mat.dispose(), [mat]);
+  return (
+    <mesh material={mat} scale={1800} frustumCulled={false} renderOrder={-1} raycast={() => {}}>
+      <boxGeometry args={[1, 1, 1]} />
+    </mesh>
+  );
+}
+
+/**
+ * Image-based lighting and reflections rendered from the same sky the viewer
+ * sees (plus a ground hemisphere for bounce light), so glass reflects the real
+ * sky and shaded façades pick up blue skylight. No network assets.
+ */
+function SkyEnvironment({ sky, gradient, sunDir, intensity }: { sky: SkyParams | null; gradient: { top: string; horizon: string; bottom: string }; sunDir: THREE.Vector3; intensity: number }) {
   const { gl, scene, invalidate } = useThree();
+  const key = `${JSON.stringify(sky)}|${JSON.stringify(gradient)}|${sunDir.toArray().map((v) => v.toFixed(3)).join(',')}`;
   useEffect(() => {
+    const envScene = new THREE.Scene();
+    const skyMat = sky ? physicalSkyMaterial(sky, sunDir) : gradientSkyMaterial(gradient, sunDir);
+    const dome = new THREE.Mesh(sky ? new THREE.BoxGeometry(1, 1, 1) : new THREE.SphereGeometry(1, 32, 16), skyMat);
+    dome.scale.setScalar(50);
+    envScene.add(dome);
+    // Bounce light from below: a neutral, slightly warm grey (green grass bounce would tint ceilings).
+    const groundMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#8a8378').multiplyScalar(0.8), side: THREE.DoubleSide });
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(40, 48), groundMat);
+    disc.rotation.x = -Math.PI / 2;
+    disc.position.y = -1;
+    envScene.add(disc);
     const pmrem = new THREE.PMREMGenerator(gl);
-    const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    // Render the sky without tone mapping: the environment must stay linear HDR.
+    const prevTone = gl.toneMapping;
+    gl.toneMapping = THREE.NoToneMapping;
+    const env = pmrem.fromScene(envScene, 0.02, 0.1, 200).texture;
+    gl.toneMapping = prevTone;
     scene.environment = env;
-    scene.environmentIntensity = intensity;
     invalidate();
     return () => {
       scene.environment = null;
       env.dispose();
       pmrem.dispose();
+      skyMat.dispose();
+      groundMat.dispose();
+      dome.geometry.dispose();
+      disc.geometry.dispose();
       invalidate();
     };
-  }, [gl, scene, intensity, invalidate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gl, scene, key]);
+  useEffect(() => {
+    scene.environmentIntensity = intensity;
+    invalidate();
+  }, [scene, intensity, invalidate]);
   return null;
+}
+
+/**
+ * Ground beyond the site: the same lawn material as the site terrain with a hole
+ * exactly where the terrain is (seamless, nothing overlaps, nothing z-fights),
+ * fading into the horizon with the fog.
+ */
+function SurroundingGround({ material, color, scene, center, radius }: { material?: THREE.Material; color: string; scene: import('@/core/schema/scene').Scene; center: THREE.Vector3; radius: number }) {
+  const terrain = scene.elements.find((e) => e.type === 'terrain');
+  const base = scene.levels[0]?.elevation ?? 0;
+  // Reaches the horizon, so the fogged ground meets the sky without a gap.
+  const R = Math.max(radius * 40, 1500);
+  const geo = useMemo(() => {
+    const outer = new THREE.Shape();
+    outer.moveTo(center.x - R, -(center.z - R));
+    outer.lineTo(center.x + R, -(center.z - R));
+    outer.lineTo(center.x + R, -(center.z + R));
+    outer.lineTo(center.x - R, -(center.z + R));
+    outer.closePath();
+    if (terrain && terrain.type === 'terrain') {
+      const hw = terrain.width / 2;
+      const hd = terrain.depth / 2;
+      const hole = new THREE.Path();
+      hole.moveTo(terrain.center.x - hw, -(terrain.center.z - hd));
+      hole.lineTo(terrain.center.x - hw, -(terrain.center.z + hd));
+      hole.lineTo(terrain.center.x + hw, -(terrain.center.z + hd));
+      hole.lineTo(terrain.center.x + hw, -(terrain.center.z - hd));
+      hole.closePath();
+      outer.holes.push(hole);
+    }
+    const g = new THREE.ShapeGeometry(outer);
+    g.rotateX(-Math.PI / 2);
+    return g;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(terrain ?? null), center.x, center.z, R]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  // Without a site terrain the ground sits just under the ground-floor slab.
+  const y = terrain && terrain.type === 'terrain' ? base + terrain.elevation : base - 0.02;
+  return (
+    <mesh geometry={geo} position-y={y} receiveShadow raycast={() => {}} material={material}>
+      {material ? null : <meshStandardMaterial color={color} roughness={1} metalness={0} />}
+    </mesh>
+  );
 }
 
 /** Scene-level fog (a <fog attach> inside a group would attach to the group, not the scene). */
@@ -82,7 +195,7 @@ function SceneFog({ color, near, far }: { color: string; near: number; far: numb
   return null;
 }
 
-export function Lighting() {
+export function Lighting({ groundMaterial }: { groundMaterial?: THREE.Material }) {
   const viewMode = useEditor((s) => s.viewMode);
   const settings = useEditor((s) => s.scene.settings);
   const scene = useEditor((s) => s.scene);
@@ -99,11 +212,10 @@ export function Lighting() {
   const el = THREE.MathUtils.degToRad(settings.sunElevation);
   const sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
   const sunPos = center.clone().add(sunDir.clone().multiplyScalar(radius * 3));
-  // Well below the site terrain (-0.15) so the two never compete for depth at a distance.
-  const groundY = (scene.levels[0]?.elevation ?? 0) - 0.45;
 
   useEffect(() => {
-    gl.toneMapping = THREE.ACESFilmicToneMapping;
+    // AgX (as in Blender/film pipelines): natural highlight roll-off and colour.
+    gl.toneMapping = realistic ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
     gl.toneMappingExposure = realistic ? preset.exposure : 1.0;
   }, [gl, realistic, preset.exposure]);
 
@@ -117,16 +229,18 @@ export function Lighting() {
       {!realistic ? <color attach="background" args={['#161513']} /> : null}
       {realistic ? (
         <group key="realistic-lighting">
-          <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} />
+          {preset.sky ? <PhysicalSky params={preset.sky} sunDir={sunDir} /> : <GradientSky top={preset.top} horizon={preset.horizon} bottom={preset.bottom} sunDir={sunDir} />}
           {/* Atmospheric depth: distant ground dissolves into the horizon instead of ending at a hard edge. */}
           <SceneFog color={preset.horizon} near={radius * 3.2} far={radius * 9} />
-          <mesh rotation-x={-Math.PI / 2} position={[center.x, groundY, center.z]} receiveShadow raycast={() => {}}>
-            <circleGeometry args={[radius * 40, 64]} />
-            <meshStandardMaterial color={preset.ground} roughness={1} metalness={0} />
-          </mesh>
+          <SurroundingGround material={groundMaterial} color={preset.ground} scene={scene} center={center} radius={radius} />
           {/* First person: no sun shadows (shadow maps alias badly at arm's length and shimmer
               while moving) and softer, more even light instead. */}
-          <EnvironmentMap intensity={(settings.environment === 'night' ? 0.15 : 0.55) * (walkMode ? 1.5 : 1)} />
+          <SkyEnvironment
+            sky={preset.sky}
+            gradient={{ top: preset.top, horizon: preset.horizon, bottom: preset.bottom }}
+            sunDir={sunDir}
+            intensity={(settings.environment === 'night' ? 0.3 : 1) * (walkMode ? 1.3 : 1)}
+          />
           <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI * (walkMode ? 1.6 : 1)]} />
           <directionalLight
             ref={sunRef}

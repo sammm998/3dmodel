@@ -45,8 +45,8 @@ export type SavedView = z.infer<typeof SavedView>;
 export const SceneSettings = z.object({
   environment: z.enum(['day', 'sunset', 'overcast', 'night']).default('day'),
   /** Sun direction in degrees. */
-  sunAzimuth: z.number().min(-360).max(360).default(135),
-  sunElevation: z.number().min(0).max(90).default(45),
+  sunAzimuth: z.number().min(-360).max(360).default(35),
+  sunElevation: z.number().min(0).max(90).default(38),
   displayUnits: z.enum(['m', 'cm', 'mm', 'ft']).default('m'),
 });
 export type SceneSettings = z.infer<typeof SceneSettings>;
@@ -74,7 +74,7 @@ export function emptyScene(): Scene {
     groups: [],
     materials: [],
     views: [],
-    settings: { environment: 'day', sunAzimuth: 135, sunElevation: 45, displayUnits: 'm' },
+    settings: { environment: 'day', sunAzimuth: 35, sunElevation: 38, displayUnits: 'm' },
     counters: { level: 0 },
   };
 }

@@ -134,7 +134,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
           <OrthographicCamera makeDefault position={[14, 10, 16]} zoom={40} near={-1000} far={2500} />
         )}
         <CameraRig />
-        <Lighting />
+        <Lighting groundMaterial={materials.get('grass')} />
         <Suspense fallback={null}>
           <SceneObjects materials={materials} interactive={interactive && !walkMode} />
         </Suspense>
