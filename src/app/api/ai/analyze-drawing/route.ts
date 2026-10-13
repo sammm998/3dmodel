@@ -3,6 +3,8 @@ import { analyzeDrawing } from '@/server/ai/orchestrator';
 import { ProviderError } from '@/server/ai/providers';
 import { getRepository } from '@/server/storage';
 import { handle, json, readJson } from '@/server/http';
+import { consumeAiRequest, requireProject, requireUser } from '@/server/auth';
+import { aiStatus } from '@/server/ai/providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,7 +19,13 @@ const Body = z.object({
 });
 
 export const POST = handle(async (req: Request) => {
+  const user = await requireUser(req);
   const body = Body.parse(await readJson(req));
+  if (body.assetId) {
+    const a = await getRepository().getAsset(body.assetId);
+    if (a) await requireProject(req, a.projectId);
+  }
+  if (aiStatus().configured) await consumeAiRequest(user);
   try {
     const analysis = await analyzeDrawing(body.image, body.width, body.height, body.hint);
     if (body.assetId) await getRepository().updateAssetAnalysis(body.assetId, { ai: analysis, at: new Date().toISOString() }).catch(() => {});

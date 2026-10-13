@@ -4,7 +4,7 @@ const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? (process.env.PLAY
 
 export default defineConfig({
   testDir: 'tests/e2e',
-  timeout: 180_000,
+  timeout: 300_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
   workers: 1,

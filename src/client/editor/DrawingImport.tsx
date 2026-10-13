@@ -552,7 +552,7 @@ export function DrawingImportDialog() {
                   <image href={loaded.dataUrl} width={loaded.width} height={loaded.height} opacity={0.85} />
                   {plan.rooms.map((r) => (
                     <g key={r.id}>
-                      <circle cx={r.at.x} cy={r.at.y} r={5 / k} fill={sel === r.id ? '#f0c97f' : '#7aa7ff'} />
+                      <circle cx={r.at.x} cy={r.at.y} r={5 / k} fill={sel === r.id ? '#dcbd8a' : '#7aa7ff'} />
                       <text x={r.at.x + 8 / k} y={r.at.y + 4 / k} fontSize={13 / k} fill="#7aa7ff" style={{ paintOrder: 'stroke' }} stroke="#0e1013" strokeWidth={3 / k}>
                         {r.name}
                       </text>
@@ -563,10 +563,10 @@ export function DrawingImportDialog() {
                     const unsure = w.confidence < 0.6;
                     return (
                       <g key={w.id}>
-                        <line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={sel === w.id ? '#f0c97f' : unsure ? '#f5b84a' : w.exterior ? '#5fd39a' : '#7aa7ff'} strokeOpacity={0.45} strokeWidth={thick} strokeLinecap="square" />
-                        <line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={sel === w.id ? '#f0c97f' : unsure ? '#f5b84a' : '#e3e6eb'} strokeWidth={1.5 / k} strokeDasharray={unsure ? `${6 / k} ${4 / k}` : undefined} />
+                        <line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={sel === w.id ? '#dcbd8a' : unsure ? '#f5b84a' : w.exterior ? '#5fd39a' : '#7aa7ff'} strokeOpacity={0.45} strokeWidth={thick} strokeLinecap="square" />
+                        <line x1={w.a.x} y1={w.a.y} x2={w.b.x} y2={w.b.y} stroke={sel === w.id ? '#dcbd8a' : unsure ? '#f5b84a' : '#ece9e2'} strokeWidth={1.5 / k} strokeDasharray={unsure ? `${6 / k} ${4 / k}` : undefined} />
                         {sel === w.id
-                          ? [w.a, w.b].map((p, i) => <rect key={i} x={p.x - 5 / k} y={p.y - 5 / k} width={10 / k} height={10 / k} fill="#0b0d10" stroke="#f0c97f" strokeWidth={1.5 / k} />)
+                          ? [w.a, w.b].map((p, i) => <rect key={i} x={p.x - 5 / k} y={p.y - 5 / k} width={10 / k} height={10 / k} fill="#0f0f0d" stroke="#dcbd8a" strokeWidth={1.5 / k} />)
                           : null}
                       </g>
                     );
@@ -580,7 +580,7 @@ export function DrawingImportDialog() {
                     const widthUnits = o.source === 'raster' || o.source === 'ai' ? o.width : upm ? o.width * upm : o.width * 50;
                     const cx = w.a.x + (w.b.x - w.a.x) * o.t;
                     const cy = w.a.y + (w.b.y - w.a.y) * o.t;
-                    const color = sel === o.id ? '#f0c97f' : o.confidence < 0.6 ? '#f5b84a' : o.type === 'door' ? '#ff9f7a' : '#8fd3ff';
+                    const color = sel === o.id ? '#dcbd8a' : o.confidence < 0.6 ? '#f5b84a' : o.type === 'door' ? '#ff9f7a' : '#8fd3ff';
                     return (
                       <g key={o.id}>
                         <line x1={cx - (ux * widthUnits) / 2} y1={cy - (uy * widthUnits) / 2} x2={cx + (ux * widthUnits) / 2} y2={cy + (uy * widthUnits) / 2} stroke={color} strokeWidth={7 / k} strokeLinecap="butt" />
@@ -588,9 +588,9 @@ export function DrawingImportDialog() {
                       </g>
                     );
                   })}
-                  {chain && cursor && tool === 'wall' ? <line x1={chain.x} y1={chain.y} x2={cursor.x} y2={cursor.y} stroke="#f0c97f" strokeWidth={2 / k} strokeDasharray={`${5 / k} ${4 / k}`} /> : null}
+                  {chain && cursor && tool === 'wall' ? <line x1={chain.x} y1={chain.y} x2={cursor.x} y2={cursor.y} stroke="#dcbd8a" strokeWidth={2 / k} strokeDasharray={`${5 / k} ${4 / k}`} /> : null}
                   {chain && cursor && tool === 'wall' ? (
-                    <text x={(chain.x + cursor.x) / 2} y={(chain.y + cursor.y) / 2 - 8 / k} fontSize={12 / k} fill="#f0c97f">
+                    <text x={(chain.x + cursor.x) / 2} y={(chain.y + cursor.y) / 2 - 8 / k} fontSize={12 / k} fill="#dcbd8a">
                       {metersText(Math.hypot(cursor.x - chain.x, cursor.y - chain.y))}
                     </text>
                   ) : null}
@@ -716,7 +716,7 @@ export function DrawingImportDialog() {
                       </IconButton>
                     </div>
                     <label className="flex items-center gap-2 text-[11.5px] text-ink-300">
-                      <input type="checkbox" className="accent-[#e2b86b]" checked={selWall.exterior} onChange={(e) => updWall({ exterior: e.target.checked })} /> Exterior wall
+                      <input type="checkbox" className="accent-[#cdab74]" checked={selWall.exterior} onChange={(e) => updWall({ exterior: e.target.checked })} /> Exterior wall
                     </label>
                     <label className="flex items-center justify-between gap-2 text-[11.5px] text-ink-300">
                       Thickness (m)

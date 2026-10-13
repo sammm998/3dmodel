@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { runCommand } from '@/server/ai/orchestrator';
 import { ProviderError } from '@/server/ai/providers';
 import { handle, json, readJson } from '@/server/http';
+import { consumeAiRequest, requireUser } from '@/server/auth';
+import { aiStatus } from '@/server/ai/providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,8 +17,10 @@ const Body = z.object({
 });
 
 export const POST = handle(async (req: Request) => {
+  const user = await requireUser(req);
   const body = Body.parse(await readJson(req));
   if (JSON.stringify(body.context).length > 400_000) return json({ error: 'Context too large' }, 413);
+  if (aiStatus().configured) await consumeAiRequest(user);
   try {
     const result = await runCommand(body.prompt, body.context as never, body.history, body.images);
     return json(result);

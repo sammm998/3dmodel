@@ -82,7 +82,21 @@ class ResilientRepository implements Repository {
     return this.delegate;
   }
 
-  listProjects: Repository['listProjects'] = async () => (await this.d()).listProjects();
+  listProjects: Repository['listProjects'] = async (o) => (await this.d()).listProjects(o);
+  countProjects: Repository['countProjects'] = async (o) => (await this.d()).countProjects(o);
+  claimOrphanProjects: Repository['claimOrphanProjects'] = async (o) => (await this.d()).claimOrphanProjects(o);
+  countUsers: Repository['countUsers'] = async () => (await this.d()).countUsers();
+  createUser: Repository['createUser'] = async (i) => (await this.d()).createUser(i);
+  getUserById: Repository['getUserById'] = async (id) => (await this.d()).getUserById(id);
+  getUserByEmail: Repository['getUserByEmail'] = async (e) => (await this.d()).getUserByEmail(e);
+  getUserByStripeCustomer: Repository['getUserByStripeCustomer'] = async (c) => (await this.d()).getUserByStripeCustomer(c);
+  updateUser: Repository['updateUser'] = async (id, p) => (await this.d()).updateUser(id, p);
+  deleteUser: Repository['deleteUser'] = async (id) => (await this.d()).deleteUser(id);
+  createSession: Repository['createSession'] = async (t, u, e) => (await this.d()).createSession(t, u, e);
+  getSession: Repository['getSession'] = async (t) => (await this.d()).getSession(t);
+  deleteSession: Repository['deleteSession'] = async (t) => (await this.d()).deleteSession(t);
+  incrementUsage: Repository['incrementUsage'] = async (u, p, m, a) => (await this.d()).incrementUsage(u, p, m, a);
+  getUsage: Repository['getUsage'] = async (u, p) => (await this.d()).getUsage(u, p);
   getProject: Repository['getProject'] = async (id) => (await this.d()).getProject(id);
   createProject: Repository['createProject'] = async (i) => (await this.d()).createProject(i);
   updateProject: Repository['updateProject'] = async (id, p) => (await this.d()).updateProject(id, p);

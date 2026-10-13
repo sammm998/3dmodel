@@ -15,8 +15,22 @@ const state = (page: Page) => page.evaluate(() => (window as any).__AI3D__.getSt
 const ofType = (els: El[], t: string) => els.filter((e) => e.type === t);
 
 test('acceptance: prompt → select window → edit → undo → save → reload → GLB', async ({ page }) => {
-  // 1-2. Open app, create a project
+  // 0. The studio requires an account: signed-out visitors are sent to sign in.
+  await page.goto('/app');
+  await expect(page).toHaveURL(/\/login\?next=%2Fapp/);
+
+  // 1. Landing page → create an account → dashboard
   await page.goto('/');
+  await page.getByTestId('hero-cta').click();
+  await expect(page).toHaveURL(/\/signup/);
+  await page.locator('input[name=name]').fill('Acceptance Tester');
+  await page.locator('input[name=email]').fill(`acceptance-${Date.now()}@example.com`);
+  await page.locator('input[name=password]').fill('acceptance-pass-1');
+  await page.getByTestId('auth-submit').click();
+  await page.waitForURL(/\/app$/);
+  await expect(page.getByTestId('usage-card')).toBeVisible();
+
+  // 2. Create a project
   await page.getByTestId('new-blank').click();
   await page.waitForURL(/\/project\//);
   const projectUrl = page.url();

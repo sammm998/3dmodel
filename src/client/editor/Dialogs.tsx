@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { Check, Copy, Download, Link2, Link2Off } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Check, Copy, Download, Link2, Link2Off, Lock } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { Badge, Button, Dialog, DialogContent } from '../ui/primitives';
 import { downloadBlob, cn } from '../lib/utils';
@@ -10,6 +10,7 @@ import { exportDXF } from '@/core/export/dxf';
 import { MaterialManager } from '../three/materials';
 import { captureImage } from './capture';
 import { api } from '../lib/api';
+import { getPlan, type ExportFormat } from '@/core/billing/plans';
 
 type Format = 'glb' | 'glb-plain' | 'obj' | 'stl' | 'stl-mm' | 'ifc' | 'dxf' | 'png';
 
@@ -31,8 +32,26 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
   const [error, setError] = useState<string | null>(null);
   const selection = useEditor((s) => s.selection);
   const name = useEditor((s) => s.projectName);
+  // Plan gating for professional formats (signed-out share viewers get the Free formats).
+  const [allowed, setAllowed] = useState<ExportFormat[]>(getPlan('free').limits.exportFormats);
+  useEffect(() => {
+    if (!open) return;
+    api
+      .me()
+      .then((r) => setAllowed(getPlan(r.user?.plan ?? 'free').limits.exportFormats))
+      .catch(() => {});
+  }, [open]);
+  const baseFormat = (f: Format): ExportFormat | null => (f === 'glb-plain' ? 'glb' : f === 'stl-mm' ? 'stl' : f === 'png' ? null : (f as ExportFormat));
+  const locked = (f: Format) => {
+    const b = baseFormat(f);
+    return b !== null && !allowed.includes(b);
+  };
 
   const run = async () => {
+    if (locked(format)) {
+      window.open('/pricing', '_blank');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -93,6 +112,11 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                 <span className="text-[12.5px] font-medium text-ink-100">{f.title}</span>
                 <span className="font-mono text-[10.5px] text-ink-400">{f.ext}</span>
                 {f.tag ? <Badge tone="accent">{f.tag}</Badge> : null}
+                {locked(f.id) ? (
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-accent/30 px-2 py-0.5 text-[10.5px] text-accent">
+                    <Lock className="h-3 w-3" /> Pro
+                  </span>
+                ) : null}
               </div>
               <div className="ml-6 mt-1 text-[11.5px] leading-relaxed text-ink-300">{f.desc}</div>
               {f.limits ? <div className="ml-6 mt-1 text-[11px] text-warn/90">Limitations: {f.limits}</div> : null}
@@ -101,14 +125,20 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         </div>
         <div className="flex items-center justify-between border-t border-white/[0.06] px-4 py-3">
           <label className={cn('flex items-center gap-2 text-[12px] text-ink-200', (!selection.length || format === 'dxf' || format === 'png') && 'opacity-40')}>
-            <input type="checkbox" className="accent-[#e2b86b]" disabled={!selection.length || format === 'dxf' || format === 'png'} checked={selectionOnly} onChange={(e) => setSelectionOnly(e.target.checked)} />
+            <input type="checkbox" className="accent-[#cdab74]" disabled={!selection.length || format === 'dxf' || format === 'png'} checked={selectionOnly} onChange={(e) => setSelectionOnly(e.target.checked)} />
             Selected objects only ({selection.length})
           </label>
           <div className="flex items-center gap-2">
             {error ? <span className="text-[11.5px] text-danger">{error}</span> : null}
-            <Button variant="primary" onClick={run} loading={busy} data-testid="do-export">
-              <Download className="h-4 w-4" /> Export
-            </Button>
+            {locked(format) ? (
+              <Button variant="primary" onClick={run} data-testid="do-export">
+                <Lock className="h-4 w-4" /> Upgrade to export {format.toUpperCase()}
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={run} loading={busy} data-testid="do-export">
+                <Download className="h-4 w-4" /> Export
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

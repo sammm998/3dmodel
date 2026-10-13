@@ -36,12 +36,24 @@ npm run build && npm start          # http://localhost:3000   (or: npm run dev)
   * On Railway, add a **Volume** with mount path `/app/data` (or set `DATA_DIR`) so projects survive redeploys.
   * Without a volume, the home page warns that projects are lost on each redeploy.
 * **Optional PostgreSQL.** In Railway, use *New → Database → PostgreSQL* and set `DATABASE_URL=${{Postgres.DATABASE_URL}}` on the app service. Do not use the `localhost` value from `.env.example`.
-* **If `DATABASE_URL` is set but unreachable,** the app falls back to file storage instead of failing. The reason is shown on the home page and in `/api/health`.
+* **If `DATABASE_URL` is set but unreachable,** the app falls back to file storage instead of failing. The reason is shown on the dashboard and in `/api/health`.
+
+### Accounts, plans and payments
+
+* **Accounts.** Email + password (scrypt hashes, HttpOnly session cookie, rate-limited sign-in). Every project belongs to one account; the studio (`/app`, `/project/*`, `/account`) requires signing in, share links stay public and read-only. Projects created before accounts existed are given to the **first account** that signs up. Users can delete their account and all data from `/account`.
+* **Plans** are defined in `src/core/billing/plans.ts` (Free / Pro / Studio, EUR). The server enforces them: project count, monthly AI requests (LLM commands, AI drawing recognition, server speech-to-text) and IFC/DXF export. Edits handled by the built-in interpreter are unlimited.
+* **Admins.** `ADMIN_EMAILS=you@example.com` gives those accounts the Studio plan without paying.
+* **Stripe (optional until you charge).** Without Stripe keys the pricing page works and upgrades are disabled with a notice. To take payments:
+  1. In Stripe, create the products **Pro** and **Studio**, each with a monthly and a yearly recurring price matching `plans.ts`. Put the four price ids in `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`, `STRIPE_PRICE_STUDIO_MONTHLY` and `STRIPE_PRICE_STUDIO_YEARLY`.
+  2. Set `STRIPE_SECRET_KEY`.
+  3. Add a webhook endpoint `https://<your-domain>/api/billing/webhook` for `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated` and `customer.subscription.deleted`. Put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+  4. Enable the **Customer Portal** (Settings → Billing → Customer portal) so customers can switch plans, update cards, see invoices and cancel.
+* **Before launch:** set `APP_URL`, `COMPANY_NAME`, `CONTACT_EMAIL` (footer and legal pages), review `/terms` and `/privacy` with your own legal details, and use PostgreSQL or a Railway volume so accounts and projects persist.
 
 ### Tests
 
 ```bash
-npm test               # 54 unit + integration tests (vitest)
+npm test               # unit + integration tests (vitest); add TEST_DATABASE_URL to also run the account tests against PostgreSQL
 npm run test:e2e       # Playwright end-to-end acceptance test (builds must exist: npm run build)
 npm run typecheck && npm run lint
 ```
@@ -56,6 +68,8 @@ npm run typecheck && npm run lint
 ---
 
 ## What works (implemented and tested)
+
+* **Website and accounts.** Landing page, pricing (Free / Pro / Studio with monthly/yearly billing), sign-up and sign-in, a projects dashboard with plan usage, an account page (plan, usage, Stripe billing portal, account deletion), terms and privacy pages. Plan limits are enforced on the server.
 
 | Area | Status |
 | --- | --- |

@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { BrandMark } from '../site/Brand';
 import { ArrowLeft, Camera, Footprints, ChevronDown, ChevronUp, CloudOff, Download, Eye, FileUp, Loader2, Plus, Share2, Sparkles, X } from 'lucide-react';
 import * as THREE from 'three';
 import { useEditor, type ViewMode } from '../store/editor';
@@ -67,16 +68,16 @@ function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => vo
   const readOnly = useEditor((s) => s.readOnly);
   const [editing, setEditing] = useState(false);
   return (
-    <header className="relative z-20 flex h-12 shrink-0 items-center justify-between border-b border-white/[0.06] bg-ink-900/90 px-3 backdrop-blur">
+    <header className="relative z-20 flex h-[52px] shrink-0 items-center justify-between border-b border-white/[0.06] bg-ink-900/95 px-3 backdrop-blur">
       <div className="flex min-w-0 items-center gap-2">
         {!readOnly ? (
-          <Link href="/" className="rounded-md p-1.5 text-ink-300 hover:bg-white/5 hover:text-ink-100" aria-label="Back to projects">
+          <Link href="/app" className="rounded-md p-1.5 text-ink-300 hover:bg-white/5 hover:text-ink-100" aria-label="Back to projects">
             <ArrowLeft className="h-4 w-4" />
           </Link>
         ) : null}
-        <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-accent to-[#a7793a] text-ink-950 shadow-glow">
-          <Sparkles className="h-4 w-4" />
-        </div>
+        <Link href={readOnly ? '/' : '/app'} className="text-accent transition hover:text-accent-strong" aria-label="AI 3D Studio">
+          <BrandMark className="h-6 w-6" />
+        </Link>
         <div className="min-w-0">
           {editing && !readOnly ? (
             <input
@@ -93,7 +94,7 @@ function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => vo
               }}
             />
           ) : (
-            <button className="block max-w-[260px] truncate text-left text-[13px] font-semibold text-ink-100 hover:text-accent" onClick={() => setEditing(true)} data-testid="project-name">
+            <button className="block max-w-[260px] truncate text-left font-display text-[17px] leading-tight text-ink-100 hover:text-accent" onClick={() => setEditing(true)} data-testid="project-name">
               {name}
             </button>
           )}
@@ -107,13 +108,13 @@ function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => vo
         {!readOnly ? (
           <>
             <Button size="sm" variant="ghost" onClick={() => window.dispatchEvent(new CustomEvent('ai3d:import-drawing'))}>
-              <FileUp className="h-3.5 w-3.5" /> Import drawing
+              <FileUp className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Import drawing</span>
             </Button>
             <Button size="sm" variant="ghost" onClick={startWalk} data-testid="walk-button">
-              <Footprints className="h-3.5 w-3.5" /> Walk inside
+              <Footprints className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Walk inside</span>
             </Button>
             <Button size="sm" variant="ghost" onClick={onShare}>
-              <Share2 className="h-3.5 w-3.5" /> Share
+              <Share2 className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Share</span>
             </Button>
           </>
         ) : null}
@@ -399,7 +400,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
         <div className="text-center">
           <div className="text-[15px] font-semibold text-ink-100">Could not open project</div>
           <div className="mt-1 text-[12.5px] text-ink-300">{error}</div>
-          <Link href="/" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
+          <Link href="/app" className="mt-4 inline-block text-[12.5px] text-accent hover:underline">
             Back to projects
           </Link>
         </div>

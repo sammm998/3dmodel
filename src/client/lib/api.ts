@@ -1,4 +1,5 @@
 import type { Scene } from '@/core/schema/scene';
+import type { PublicUser } from '@/server/auth';
 import type { AssetRecord, ChatMessage, ProjectRecord, ProjectSummary, VersionRecord } from '@/server/storage/types';
 
 async function req<T>(url: string, init?: RequestInit, timeoutMs = 30_000): Promise<T> {
@@ -13,6 +14,10 @@ async function req<T>(url: string, init?: RequestInit, timeoutMs = 30_000): Prom
     clearTimeout(timer);
   }
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401 && typeof window !== 'undefined' && !url.startsWith('/api/auth/')) {
+    // Session expired or signed out in another tab.
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+  }
   if (!res.ok) {
     const err = new Error((data as { message?: string; error?: string }).message ?? (data as { error?: string }).error ?? `Request failed (${res.status})`) as Error & { status?: number; code?: string };
     err.status = res.status;
@@ -22,7 +27,22 @@ async function req<T>(url: string, init?: RequestInit, timeoutMs = 30_000): Prom
   return data as T;
 }
 
+export interface Usage {
+  period: string;
+  aiRequests: number;
+  aiLimit: number;
+  projects: number;
+  projectLimit: number | null;
+}
+
 export const api = {
+  me: () => req<{ user: PublicUser | null; usage?: Usage; billing: boolean }>('/api/auth/me'),
+  signup: (body: { name: string; email: string; password: string }) => req<{ user: PublicUser }>('/api/auth/signup', { method: 'POST', body: JSON.stringify(body) }),
+  login: (body: { email: string; password: string }) => req<{ user: PublicUser }>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  deleteAccount: (password: string) => req<{ ok: true }>('/api/auth/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
+  logout: () => req<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+  checkout: (plan: 'pro' | 'studio', interval: 'monthly' | 'yearly') => req<{ url: string }>('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan, interval }) }),
+  billingPortal: () => req<{ url: string }>('/api/billing/portal', { method: 'POST' }),
   listProjects: () => req<{ projects: ProjectSummary[] }>('/api/projects'),
   createProject: (body: { name: string; description?: string; starterId?: string; scene?: Scene }) =>
     req<{ project: ProjectRecord }>('/api/projects', { method: 'POST', body: JSON.stringify(body) }),

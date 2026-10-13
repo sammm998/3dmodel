@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { getRepository } from '@/server/storage';
 import { handle, HttpError, json, readJson } from '@/server/http';
 import { Scene } from '@/core/schema/scene';
+import { requireProject } from '@/server/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,23 +33,24 @@ const UpdateBody = z.object({
     .optional(),
 });
 
-export const GET = handle(async (_req: Request, { params }: Ctx) => {
+export const GET = handle(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
-  const project = await getRepository().getProject(id);
-  if (!project) throw new HttpError(404, 'Project not found');
+  const { project } = await requireProject(req, id);
   return json({ project });
 });
 
 export const PUT = handle(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
+  await requireProject(req, id);
   const body = UpdateBody.parse(await readJson(req));
   const project = await getRepository().updateProject(id, body);
   if (!project) throw new HttpError(404, 'Project not found');
   return json({ project: { ...project, scene: undefined, chat: undefined } });
 });
 
-export const DELETE = handle(async (_req: Request, { params }: Ctx) => {
+export const DELETE = handle(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
+  await requireProject(req, id);
   const ok = await getRepository().deleteProject(id);
   if (!ok) throw new HttpError(404, 'Project not found');
   return json({ ok: true });

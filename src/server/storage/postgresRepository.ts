@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { nanoid } from 'nanoid';
 import type { Scene } from '@/core/schema/scene';
-import type { AssetRecord, CreateProjectInput, ProjectRecord, ProjectSummary, Repository, UpdateProjectInput, VersionRecord } from './types';
+import type { AssetRecord, CreateProjectInput, PlanId, ProjectRecord, ProjectSummary, Repository, UpdateProjectInput, UserPatch, UserRecord, VersionRecord } from './types';
 
 export const MIGRATIONS: string[] = [
   `CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`,
@@ -39,6 +39,34 @@ export const MIGRATIONS: string[] = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   `CREATE INDEX IF NOT EXISTS assets_project_idx ON assets(project_id)`,
+  `CREATE TABLE IF NOT EXISTS users (
+     id TEXT PRIMARY KEY,
+     email TEXT NOT NULL UNIQUE,
+     name TEXT NOT NULL DEFAULT '',
+     password_hash TEXT NOT NULL,
+     plan TEXT NOT NULL DEFAULT 'free',
+     plan_status TEXT,
+     stripe_customer_id TEXT UNIQUE,
+     stripe_subscription_id TEXT,
+     current_period_end TIMESTAMPTZ,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE TABLE IF NOT EXISTS sessions (
+     token_hash TEXT PRIMARY KEY,
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     expires_at TIMESTAMPTZ NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id)`,
+  `CREATE TABLE IF NOT EXISTS usage_counters (
+     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     period TEXT NOT NULL,
+     metric TEXT NOT NULL,
+     amount INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (user_id, period, metric)
+   )`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS owner_id TEXT REFERENCES users(id) ON DELETE CASCADE`,
+  `CREATE INDEX IF NOT EXISTS projects_owner_idx ON projects(owner_id, updated_at DESC)`,
 ];
 
 type Row = Record<string, any>;
@@ -48,6 +76,7 @@ const iso = (d: Date | string) => (d instanceof Date ? d.toISOString() : new Dat
 function summary(r: Row): ProjectSummary {
   return {
     id: r.id,
+    ownerId: r.owner_id ?? null,
     name: r.name,
     description: r.description,
     createdAt: iso(r.created_at),
@@ -61,6 +90,32 @@ function summary(r: Row): ProjectSummary {
 function project(r: Row): ProjectRecord {
   return { ...summary(r), scene: r.scene as Scene, chat: r.chat ?? [] };
 }
+
+function user(r: Row): UserRecord {
+  return {
+    id: r.id,
+    email: r.email,
+    name: r.name,
+    passwordHash: r.password_hash,
+    plan: r.plan as PlanId,
+    planStatus: r.plan_status ?? null,
+    stripeCustomerId: r.stripe_customer_id ?? null,
+    stripeSubscriptionId: r.stripe_subscription_id ?? null,
+    currentPeriodEnd: r.current_period_end ? iso(r.current_period_end) : null,
+    createdAt: iso(r.created_at),
+  };
+}
+
+const USER_COLS: Record<keyof UserPatch, string> = {
+  email: 'email',
+  name: 'name',
+  passwordHash: 'password_hash',
+  plan: 'plan',
+  planStatus: 'plan_status',
+  stripeCustomerId: 'stripe_customer_id',
+  stripeSubscriptionId: 'stripe_subscription_id',
+  currentPeriodEnd: 'current_period_end',
+};
 
 function asset(r: Row): AssetRecord {
   return {
@@ -120,9 +175,23 @@ export class PostgresRepository implements Repository {
     return this.pool.query(sql, params);
   }
 
-  async listProjects() {
-    const { rows } = await this.q('SELECT id, name, description, thumbnail, share_token, element_count, created_at, updated_at FROM projects ORDER BY updated_at DESC');
+  async listProjects(ownerId?: string) {
+    const cols = 'id, owner_id, name, description, thumbnail, share_token, element_count, created_at, updated_at';
+    const { rows } =
+      ownerId === undefined
+        ? await this.q(`SELECT ${cols} FROM projects ORDER BY updated_at DESC`)
+        : await this.q(`SELECT ${cols} FROM projects WHERE owner_id = $1 ORDER BY updated_at DESC`, [ownerId]);
     return rows.map(summary);
+  }
+
+  async countProjects(ownerId: string) {
+    const { rows } = await this.q('SELECT count(*)::int AS n FROM projects WHERE owner_id = $1', [ownerId]);
+    return rows[0].n as number;
+  }
+
+  async claimOrphanProjects(ownerId: string) {
+    const { rowCount } = await this.q('UPDATE projects SET owner_id = $1 WHERE owner_id IS NULL', [ownerId]);
+    return rowCount ?? 0;
   }
 
   async getProject(id: string) {
@@ -133,8 +202,8 @@ export class PostgresRepository implements Repository {
   async createProject(input: CreateProjectInput) {
     const id = nanoid(12);
     const { rows } = await this.q(
-      `INSERT INTO projects (id, name, description, scene, thumbnail, element_count) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [id, input.name, input.description ?? '', JSON.stringify(input.scene), input.thumbnail ?? null, input.scene.elements.length],
+      `INSERT INTO projects (id, owner_id, name, description, scene, thumbnail, element_count) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [id, input.ownerId ?? null, input.name, input.description ?? '', JSON.stringify(input.scene), input.thumbnail ?? null, input.scene.elements.length],
     );
     return project(rows[0]);
   }
@@ -221,6 +290,85 @@ export class PostgresRepository implements Repository {
   async deleteAsset(id: string) {
     const { rowCount } = await this.q('DELETE FROM assets WHERE id = $1', [id]);
     return (rowCount ?? 0) > 0;
+  }
+
+  async countUsers() {
+    const { rows } = await this.q('SELECT count(*)::int AS n FROM users');
+    return rows[0].n as number;
+  }
+
+  async createUser(input: { email: string; name: string; passwordHash: string; plan?: PlanId }) {
+    const { rows } = await this.q('INSERT INTO users (id, email, name, password_hash, plan) VALUES ($1,$2,$3,$4,$5) RETURNING *', [
+      nanoid(14),
+      input.email,
+      input.name,
+      input.passwordHash,
+      input.plan ?? 'free',
+    ]);
+    return user(rows[0]);
+  }
+
+  async getUserById(id: string) {
+    const { rows } = await this.q('SELECT * FROM users WHERE id = $1', [id]);
+    return rows[0] ? user(rows[0]) : null;
+  }
+
+  async getUserByEmail(email: string) {
+    const { rows } = await this.q('SELECT * FROM users WHERE email = $1', [email]);
+    return rows[0] ? user(rows[0]) : null;
+  }
+
+  async getUserByStripeCustomer(customerId: string) {
+    const { rows } = await this.q('SELECT * FROM users WHERE stripe_customer_id = $1', [customerId]);
+    return rows[0] ? user(rows[0]) : null;
+  }
+
+  async updateUser(id: string, patch: UserPatch) {
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) continue;
+      params.push(v);
+      sets.push(`${USER_COLS[k as keyof UserPatch]} = $${params.length}`);
+    }
+    if (!sets.length) return this.getUserById(id);
+    params.push(id);
+    const { rows } = await this.q(`UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params);
+    return rows[0] ? user(rows[0]) : null;
+  }
+
+  async deleteUser(id: string) {
+    // projects (and their versions/assets), sessions and usage cascade.
+    await this.q('DELETE FROM users WHERE id = $1', [id]);
+  }
+
+  async createSession(tokenHash: string, userId: string, expiresAt: Date) {
+    await this.q('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1,$2,$3)', [tokenHash, userId, expiresAt]);
+    // Opportunistic cleanup of expired sessions.
+    await this.q('DELETE FROM sessions WHERE expires_at < now()');
+  }
+
+  async getSession(tokenHash: string) {
+    const { rows } = await this.q('SELECT user_id, expires_at FROM sessions WHERE token_hash = $1 AND expires_at > now()', [tokenHash]);
+    return rows[0] ? { userId: rows[0].user_id as string, expiresAt: iso(rows[0].expires_at) } : null;
+  }
+
+  async deleteSession(tokenHash: string) {
+    await this.q('DELETE FROM sessions WHERE token_hash = $1', [tokenHash]);
+  }
+
+  async incrementUsage(userId: string, period: string, metric: string, amount: number) {
+    const { rows } = await this.q(
+      `INSERT INTO usage_counters (user_id, period, metric, amount) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (user_id, period, metric) DO UPDATE SET amount = usage_counters.amount + EXCLUDED.amount RETURNING amount`,
+      [userId, period, metric, amount],
+    );
+    return rows[0].amount as number;
+  }
+
+  async getUsage(userId: string, period: string) {
+    const { rows } = await this.q('SELECT metric, amount FROM usage_counters WHERE user_id = $1 AND period = $2', [userId, period]);
+    return Object.fromEntries(rows.map((r) => [r.metric, r.amount as number]));
   }
 
   async close() {

@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import { getRepository } from '@/server/storage';
 import { getObjectStorage } from '@/server/storage/objectStorage';
 import { handle, HttpError, json } from '@/server/http';
+import { requireProject } from '@/server/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,15 +11,16 @@ type Ctx = { params: Promise<{ id: string }> };
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = /^(image\/(png|jpeg|webp|gif)|application\/pdf|application\/dxf|image\/vnd\.dxf|application\/octet-stream|text\/plain)$/;
 
-export const GET = handle(async (_req: Request, { params }: Ctx) => {
+export const GET = handle(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
+  await requireProject(req, id);
   return json({ assets: await getRepository().listAssets(id) });
 });
 
 export const POST = handle(async (req: Request, { params }: Ctx) => {
   const { id } = await params;
   const repo = getRepository();
-  if (!(await repo.getProject(id))) throw new HttpError(404, 'Project not found');
+  await requireProject(req, id);
   const form = await req.formData();
   const file = form.get('file');
   const kind = (form.get('kind') as string) || 'drawing';

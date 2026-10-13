@@ -32,3 +32,19 @@ export async function readJson(req: Request): Promise<unknown> {
     throw new HttpError(400, 'Request body must be JSON');
   }
 }
+
+/**
+ * Rejects cross-site state-changing requests (defence in depth on top of
+ * SameSite=Lax cookies): when the browser sends Origin, it must match Host.
+ */
+export function assertSameOrigin(req: Request) {
+  const origin = req.headers.get('origin');
+  if (!origin) return;
+  const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host');
+  try {
+    if (host && new URL(origin).host !== host.split(',')[0].trim()) throw new HttpError(403, 'Cross-site request blocked');
+  } catch (e) {
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(403, 'Invalid origin');
+  }
+}

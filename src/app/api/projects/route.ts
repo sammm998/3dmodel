@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { getRepository } from '@/server/storage';
+import { assertCanCreateProject, requireUser } from '@/server/auth';
 import { handle, json, readJson } from '@/server/http';
 import { emptyScene, Scene } from '@/core/schema/scene';
 import { generateBuilding } from '@/core/generator/generateBuilding';
@@ -15,9 +16,14 @@ const CreateBody = z.object({
   scene: Scene.optional(),
 });
 
-export const GET = handle(async () => json({ projects: await getRepository().listProjects() }));
+export const GET = handle(async (req: Request) => {
+  const user = await requireUser(req);
+  return json({ projects: await getRepository().listProjects(user.id) });
+});
 
 export const POST = handle(async (req: Request) => {
+  const user = await requireUser(req);
+  await assertCanCreateProject(user);
   const body = CreateBody.parse(await readJson(req));
   let scene = body.scene ?? emptyScene();
   let description = body.description ?? '';
@@ -27,6 +33,6 @@ export const POST = handle(async (req: Request) => {
     scene = generateBuilding(starter.program).scene;
     description = description || starter.description;
   }
-  const project = await getRepository().createProject({ name: body.name, description, scene });
+  const project = await getRepository().createProject({ ownerId: user.id, name: body.name, description, scene });
   return json({ project }, 201);
 });

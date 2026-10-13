@@ -219,11 +219,11 @@ function LayersPanel() {
         </div>
         <label className="block text-[11px] text-ink-300">
           Sun azimuth {Math.round(scene.settings.sunAzimuth)}°
-          <input type="range" min={0} max={360} value={scene.settings.sunAzimuth} onChange={(e) => useEditor.setState((s) => ({ scene: { ...s.scene, settings: { ...s.scene.settings, sunAzimuth: Number(e.target.value) } }, dirty: true }))} className="w-full accent-[#e2b86b]" />
+          <input type="range" min={0} max={360} value={scene.settings.sunAzimuth} onChange={(e) => useEditor.setState((s) => ({ scene: { ...s.scene, settings: { ...s.scene.settings, sunAzimuth: Number(e.target.value) } }, dirty: true }))} className="w-full accent-[#cdab74]" />
         </label>
         <label className="block text-[11px] text-ink-300">
           Sun elevation {Math.round(scene.settings.sunElevation)}°
-          <input type="range" min={2} max={89} value={scene.settings.sunElevation} onChange={(e) => useEditor.setState((s) => ({ scene: { ...s.scene, settings: { ...s.scene.settings, sunElevation: Number(e.target.value) } }, dirty: true }))} className="w-full accent-[#e2b86b]" />
+          <input type="range" min={2} max={89} value={scene.settings.sunElevation} onChange={(e) => useEditor.setState((s) => ({ scene: { ...s.scene, settings: { ...s.scene.settings, sunElevation: Number(e.target.value) } }, dirty: true }))} className="w-full accent-[#cdab74]" />
         </label>
         <div className="flex items-center justify-between text-[11.5px] text-ink-200">
           Display units

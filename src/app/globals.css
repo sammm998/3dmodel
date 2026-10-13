@@ -6,11 +6,16 @@
   color-scheme: dark;
 }
 
+/* The studio (editor) is dark; the site, dashboard and account pages are light. */
+:root:has(.theme-light) {
+  color-scheme: light;
+}
+
 html,
 body {
   height: 100%;
-  background: #0b0d10;
-  color: #e3e6eb;
+  background: #0f0f0d;
+  color: #ece9e2;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: 'cv11', 'ss01';
@@ -21,7 +26,47 @@ body {
   scrollbar-color: #2a2f38 transparent;
 }
 
+body:has(.theme-light) {
+  background: #f6f3ec;
+  color: #181713;
+}
+
+::selection {
+  background: rgba(205, 171, 116, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @layer components {
+  /* Site (light) building blocks */
+  .eyebrow {
+    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-char-3;
+  }
+  .rule {
+    @apply border-char/[0.12];
+  }
+  .btn-dark {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-full bg-char px-6 text-[14px] font-medium text-paper transition hover:bg-char-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze/40 disabled:opacity-50;
+  }
+  .btn-line {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-full border border-char/20 px-6 text-[14px] font-medium text-char transition hover:border-char/50 hover:bg-char/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze/40 disabled:opacity-50;
+  }
+  .input-light {
+    @apply h-11 w-full rounded-xl border border-char/15 bg-white/70 px-3.5 text-[14px] text-char outline-none transition placeholder:text-char-4 focus:border-bronze/60 focus:bg-white focus:ring-4 focus:ring-bronze/10;
+  }
+  .card-light {
+    @apply rounded-2xl border border-char/[0.09] bg-white/60 shadow-card;
+  }
+
   .glass {
     @apply border border-white/[0.06] bg-ink-850/80 backdrop-blur-xl shadow-panel;
   }

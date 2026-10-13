@@ -211,7 +211,7 @@ export function Inspector() {
                   ))}
                 </select>
               ) : f.kind === 'bool' ? (
-                <input type="checkbox" className="h-3.5 w-3.5 accent-[#e2b86b]" checked={!!v} onChange={(e) => setField(f.key, e.target.checked)} />
+                <input type="checkbox" className="h-3.5 w-3.5 accent-[#cdab74]" checked={!!v} onChange={(e) => setField(f.key, e.target.checked)} />
               ) : f.kind === 'material' || f.kind === 'optMaterial' ? (
                 <MaterialPicker value={v as string | undefined} custom={scene.materials} allowNone={f.kind === 'optMaterial'} onChange={(m) => (m ? run([{ op: 'set_material', ids: [el.id], material: m, slot: f.key }], `Set ${f.label}`) : setField(f.key, undefined))} />
               ) : (

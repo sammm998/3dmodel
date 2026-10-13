@@ -1,11 +1,14 @@
 import { ProviderError, speechConfigured, transcribe } from '@/server/ai/providers';
 import { handle, HttpError, json } from '@/server/http';
+import { consumeAiRequest, requireUser } from '@/server/auth';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const POST = handle(async (req: Request) => {
+  const user = await requireUser(req);
   if (!speechConfigured()) return json({ error: 'not_configured', message: 'Server speech-to-text is not configured.' }, 503);
+  await consumeAiRequest(user);
   const form = await req.formData();
   const audio = form.get('audio');
   const language = (form.get('language') as string | null) ?? undefined;
