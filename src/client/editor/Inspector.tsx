@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Copy, Eye, EyeOff, Lock, Trash2, Unlock } from 'lucide-react';
 import { findClashes, resolveFurnitureClashes, type Clash } from '@/core/scene/clashes';
+import { duplicateRoomOps, roomParts } from '@/core/scene/rooms';
 import { useEditor } from '../store/editor';
 import { Badge, Button, IconButton } from '../ui/primitives';
 import { MaterialPicker } from './MaterialPicker';
@@ -10,7 +11,7 @@ import { ELEMENT_TYPE_LABELS, FurnitureKind, type Element, type ElementType } fr
 import { describeElement, findElement, wallFrame } from '@/core/scene/query';
 import { formatLength, fromDisplay, parseLength, toDisplay, type DisplayUnit } from '@/core/schema/units';
 import type { OperationInput } from '@/core/ops/operations';
-import { round } from '@/core/geometry/math2d';
+import { polygonArea, round } from '@/core/geometry/math2d';
 
 type FieldKind = 'length' | 'number' | 'int' | 'deg' | 'rad' | 'enum' | 'material' | 'optMaterial' | 'text' | 'bool';
 interface Field {
@@ -152,6 +153,16 @@ export function Inspector() {
   const setField = (key: string, v: unknown) => run([{ op: 'modify', id: el.id, set: { [key]: v }, ...(el.type === 'wall' && key === 'length' ? { anchor: 'start' as const } : {}) }], `Edit ${el.name} ${key}`);
 
   const duplicate = () => {
+    if (el.type === 'room') {
+      // A room is copied whole (walls, doors, windows, floor, furniture) beside the building.
+      const before = new Set(scene.elements.map((e) => e.id));
+      const r = useEditor.getState().apply(duplicateRoomOps(scene, el.id), `Copy ${el.name}`);
+      if (!r.ok) return useEditor.getState().notify(r.errors[0], 'danger');
+      const copy = useEditor.getState().scene.elements.find((e) => e.type === 'room' && !before.has(e.id));
+      if (copy) useEditor.getState().select(copy.id);
+      useEditor.getState().notify(`${el.name} copied beside the building`, 'success');
+      return;
+    }
     const copy = structuredClone(el) as Record<string, unknown>;
     delete copy.id;
     copy.name = `${el.name} copy`;
@@ -220,6 +231,7 @@ export function Inspector() {
         </div>
       </div>
       {info.room ? <div className="text-[11px] text-ink-300">In room: <span className="text-ink-100">{info.room.name}</span></div> : null}
+      {el.type === 'room' ? <RoomTools room={el} onCopy={duplicate} readOnly={readOnly} /> : null}
       {'hostId' in el ? (
         <div className="text-[11px] text-ink-300">
           Hosted by{' '}
@@ -271,6 +283,50 @@ export function Inspector() {
         </div>
       ) : null}
       <div className="text-[10.5px] text-ink-500">Dimensions: {Object.entries(info.dimensions).map(([k, val]) => `${k} ${k === 'area' ? `${val} m²` : k === 'pitchDeg' || k === 'steps' ? val : formatLength(val, unit)}`).join(' · ')}</div>
+    </div>
+  );
+}
+
+function RoomTools({ room, onCopy, readOnly }: { room: Extract<Element, { type: 'room' }>; onCopy: () => void; readOnly: boolean }) {
+  const scene = useEditor((s) => s.scene);
+  const parts = useMemo(() => roomParts(scene, room), [scene, room]);
+  const area = Math.abs(polygonArea(room.polygon));
+  return (
+    <div className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-2" data-testid="room-tools">
+      <div className="flex justify-between text-[11px] text-ink-300">
+        <span>
+          {area.toFixed(1)} m² · {parts.furniture.length} pieces · {parts.openings.filter((o) => o.type === 'door').length} doors
+        </span>
+      </div>
+      <div className="text-[10.5px] leading-snug text-ink-400">
+        {parts.freeStanding
+          ? 'Use Move to place the whole room: walls, doors, windows, floor and furniture move together.'
+          : 'Drag any of its walls to resize it; neighbouring rooms and joined walls follow. Move shifts the furniture.'}
+      </div>
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="subtle" disabled={readOnly} onClick={onCopy} data-testid="copy-room">
+          <Copy className="h-3.5 w-3.5" /> Copy room
+        </Button>
+        <Button
+          size="sm"
+          variant="subtle"
+          disabled={readOnly || !parts.furniture.length}
+          data-testid="arrange-room"
+          onClick={() => {
+            const st = useEditor.getState();
+            const r = resolveFurnitureClashes(st.scene, { only: parts.furniture.map((f) => f.id), keep: true });
+            if (!r.moved.length) return st.notify('Everything already has room to breathe', 'success');
+            const ops = r.moved.map((id) => {
+              const f = r.scene.elements.find((e) => e.id === id) as Extract<Element, { type: 'furniture' }>;
+              return { op: 'modify' as const, id, set: { position: f.position, rotation: f.rotation } };
+            });
+            const res = st.apply(ops, `Arrange ${room.name}`);
+            if (res.ok) st.notify(`Rearranged ${ops.length} piece${ops.length > 1 ? 's' : ''}`, 'success');
+          }}
+        >
+          Tidy furniture
+        </Button>
+      </div>
     </div>
   );
 }

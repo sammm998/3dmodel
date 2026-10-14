@@ -7,6 +7,9 @@ import { ElementIcon } from './icons';
 import { MaterialGrid } from './MaterialPicker';
 import { ELEMENT_TYPES, ELEMENT_TYPE_LABELS, type Element, type ElementType, type FurnitureKind } from '@/core/schema/elements';
 import { FURNITURE_DEFAULTS } from '@/core/generator/furnish';
+import { ROOM_TEMPLATES, roomTemplateOps } from '@/core/scene/rooms';
+import { resolveFurnitureClashes } from '@/core/scene/clashes';
+import { applyOperations } from '@/core/ops/apply';
 import { findElement, levelOf, roomContaining } from '@/core/scene/query';
 import type { OperationInput } from '@/core/ops/operations';
 import { api } from '../lib/api';
@@ -310,7 +313,29 @@ function LibraryPanel() {
       p = { x: round(cx, 2), z: round(cz, 2) };
     }
     const d = FURNITURE_DEFAULTS[kind];
-    add([{ op: 'create', element: { type: 'furniture', kind, name: d.label, levelId: st.activeLevelId, position: { x: p.x, y: kind === 'pendant_lamp' ? 1.9 : 0, z: p.z }, width: d.w, depth: d.d, height: d.h, material: d.m, secondaryMaterial: d.m2 } }], `Add ${d.label}`);
+    const element = { type: 'furniture' as const, kind, name: d.label, levelId: room && room.type === 'room' ? room.levelId : st.activeLevelId, position: { x: p.x, y: kind === 'pendant_lamp' ? 1.9 : 0, z: p.z }, rotation: 0, width: d.w, depth: d.d, height: d.h, material: d.m, secondaryMaterial: d.m2 };
+    // Drop it on the nearest free spot instead of into a wall, a doorway or other furniture.
+    const trial = applyOperations(st.scene, [{ op: 'create', element }]);
+    const id = trial.ok ? trial.changes.find((c) => c.kind === 'created')?.id : undefined;
+    const placed = id ? resolveFurnitureClashes(trial.scene, { only: [id], keep: true }).scene.elements.find((e) => e.id === id) : undefined;
+    if (placed && placed.type === 'furniture') {
+      element.position = placed.position;
+      element.rotation = placed.rotation;
+    }
+    add([{ op: 'create', element }], `Add ${d.label}`);
+  };
+  const addRoom = (templateId: string) => {
+    const st = useEditor.getState();
+    const t = ROOM_TEMPLATES.find((x) => x.id === templateId)!;
+    const before = new Set(st.scene.elements.map((e) => e.id));
+    const r = st.apply(roomTemplateOps(st.scene, templateId), `Add ${t.name.toLowerCase()}`);
+    if (!r.ok) return st.notify(r.errors[0], 'danger');
+    const room = useEditor.getState().scene.elements.find((e) => e.type === 'room' && !before.has(e.id));
+    if (room) {
+      useEditor.getState().select(room.id);
+      useEditor.getState().requestView('iso');
+      useEditor.getState().notify(`${t.name} added beside the building. Select it and use Move to place it.`, 'info');
+    }
   };
   const addOpening = (type: 'window' | 'door') => {
     const st = useEditor.getState();
@@ -335,6 +360,20 @@ function LibraryPanel() {
   ];
   return (
     <div className="space-y-3 overflow-y-auto px-3 pb-4">
+      <div>
+        <div className="panel-title mb-1.5">Ready-made rooms</div>
+        <div className="grid grid-cols-1 gap-1">
+          {ROOM_TEMPLATES.map((t) => (
+            <button key={t.id} data-testid={`room-template-${t.id}`} onClick={() => addRoom(t.id)} className="flex items-center gap-2 rounded-md border border-white/[0.05] px-2 py-1.5 text-left transition hover:border-accent/30 hover:bg-white/[0.04]">
+              <ElementIcon type="room" className="h-3.5 w-3.5 shrink-0 text-ink-400" />
+              <span className="min-w-0">
+                <span className="block text-[11px] text-ink-100">{t.name}</span>
+                <span className="block truncate text-[10px] text-ink-400">{t.description}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div>
         <div className="panel-title mb-1.5">Building elements</div>
         <div className="grid grid-cols-2 gap-1">

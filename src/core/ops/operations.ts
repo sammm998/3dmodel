@@ -50,6 +50,8 @@ export const ModifyOp = z.object({
   rotateDeg: z.number().finite().optional(),
   /** For length/width changes: which point stays fixed. */
   anchor: z.enum(['start', 'center', 'end']).optional(),
+  /** Walls: move on their own without stretching joined walls or reshaping rooms (moving a whole room). */
+  rigid: z.boolean().optional(),
 });
 
 export const DeleteOp = z.object({ op: z.literal('delete'), id: Id });

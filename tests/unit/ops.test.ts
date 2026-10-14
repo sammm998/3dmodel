@@ -57,7 +57,9 @@ describe('applyOperations', () => {
     expect(wallFrame(west).length).toBeCloseTo(5);
     // joined walls changed as dependents, not flagged as out of scope
     const dep = r.changes.filter((c) => c.dependent);
-    expect(dep.length).toBe(2);
+    // Two joined walls, plus the room outline and floor slab that follow the wall.
+    expect(dep.length).toBe(4);
+    expect(dep.map((c) => findElement(r.scene, c.id)?.type).sort()).toEqual(['room', 'slab', 'wall', 'wall']);
     expect(r.changes.some((c) => c.outOfScope)).toBe(false);
     // the window hosted on the moved wall keeps its offset
     const hosted = r.scene.elements.filter((e) => e.type === 'window' && e.hostId === north.id) as WindowElement[];

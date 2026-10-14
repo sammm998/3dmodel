@@ -103,7 +103,12 @@ export function applyOperations(input: Scene, rawOps: (Operation | OperationInpu
     return d as Record<string, unknown> & { type: Element['type'] };
   };
 
-  /** Moves a wall's endpoints, stretching joined walls and keeping openings in place. */
+  /**
+   * Moves a wall's endpoints, stretching joined walls and keeping openings in place.
+   * When the whole wall shifts sideways (dragging a wall), walls that butt into it
+   * along its length (T-junctions) stretch with it, and room and floor outlines
+   * along the wall follow, so the plan stays closed.
+   */
   const moveWall = (before: WallElement, after: WallElement, propagate = true) => {
     for (const key of ['start', 'end'] as const) {
       const oldP = before[key];
@@ -125,7 +130,51 @@ export function applyOperations(input: Scene, rawOps: (Operation | OperationInpu
         }
       }
     }
+    if (propagate) followSidewaysMove(before, after);
     keepOpeningsInPlace(before, after);
+  };
+
+  const followSidewaysMove = (before: WallElement, after: WallElement) => {
+    const ds = sub2(after.start, before.start);
+    const de = sub2(after.end, before.end);
+    if (Math.hypot(ds.x - de.x, ds.z - de.z) > 1e-6 || Math.hypot(ds.x, ds.z) < 1e-6) return;
+    const f = wallFrame(before);
+    const along = dot2(ds, f.dir);
+    const side = dot2(ds, f.normal);
+    // Only a sideways shift (the wall keeps its line direction and span).
+    if (Math.abs(along) > 1e-6 || Math.abs(side) < 1e-6) return;
+    const shift = scale2(f.normal, side);
+    const onLine = (p: Vec2, tol: number) => {
+      const r = sub2(p, before.start);
+      const t = dot2(r, f.dir);
+      return Math.abs(dot2(r, f.normal)) <= tol && t > -tol && t < f.length + tol;
+    };
+    const ends = [before.start, before.end];
+    for (const e of [...s.elements]) {
+      if (e.id === before.id || (e.levelId ?? undefined) !== (before.levelId ?? undefined)) continue;
+      if (e.type === 'wall') {
+        // T-junctions: a wall ending on this wall's line (not at its corners, handled above).
+        for (const end of ['start', 'end'] as const) {
+          const p = e[end];
+          if (ends.some((q) => Math.hypot(q.x - p.x, q.z - p.z) <= 0.02) || !onLine(p, 0.02)) continue;
+          const dir = wallFrame(e).dir;
+          if (Math.abs(dot2(f.normal, dir)) < 0.999) continue;
+          const stretched = { ...e, [end]: roundV(add2(p, shift)) } as WallElement;
+          keepOpeningsInPlace(e, stretched);
+          put(stretched);
+        }
+      } else if (e.type === 'room' || e.type === 'slab') {
+        // Outline vertices on the wall's centreline (rooms) or faces (slabs run to the outer face).
+        const tol = e.type === 'room' ? 0.02 : before.thickness / 2 + 0.02;
+        let changed = false;
+        const polygon = e.polygon.map((p) => {
+          if (!onLine(p, tol)) return p;
+          changed = true;
+          return roundV(add2(p, shift));
+        });
+        if (changed) put({ ...e, polygon } as Element);
+      }
+    }
   };
 
   const keepOpeningsInPlace = (before: WallElement, after: WallElement) => {
@@ -184,7 +233,7 @@ export function applyOperations(input: Scene, rawOps: (Operation | OperationInpu
             explicit.add(el.id);
             const next = modifyElement(s, el, op, setWallLength);
             const parsed = parseEl(next, el.name);
-            if (parsed.type === 'wall' && el.type === 'wall') moveWall(el, parsed);
+            if (parsed.type === 'wall' && el.type === 'wall') moveWall(el, parsed, !op.rigid);
             put(parsed);
             break;
           }

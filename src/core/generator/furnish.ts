@@ -182,7 +182,7 @@ function spanFinder(openings: LocalOpening[], W: number, D: number) {
 
 export function furnishRoom(
   room: ProgramRoom,
-  opts: { requested?: string[]; avoid?: Rect | null; openings?: RoomOpening[]; buildingKind?: string; anchor?: Side } = {},
+  opts: { requested?: string[]; avoid?: Rect | null; openings?: RoomOpening[]; buildingKind?: string; anchor?: Side; wallHalf?: Partial<Record<Side, number>> } = {},
 ): FurnitureSpec[] {
   const openings = opts.openings ?? [];
   // Lay the room out from each wall in turn and keep the best result: the most (and
@@ -200,7 +200,10 @@ export function furnishRoom(
       ].map((q) => worldToLocal(room, side, q));
       avoid = { x0: Math.min(c[0].u, c[1].u), x1: Math.max(c[0].u, c[1].u), z0: Math.min(c[0].v, c[1].v), z1: Math.max(c[0].v, c[1].v) };
     }
-    const items = furnishLocal({ ...room, x: 0, z: 0, width: f.W, depth: f.D }, local, { requested: opts.requested, avoid, buildingKind: opts.buildingKind });
+    // Clearance from each wall centreline: half the wall plus a few centimetres.
+    const inset: Record<LocalSide, number> = { back: 0.3, front: 0.3, left: 0.3, right: 0.3 };
+    if (opts.wallHalf) for (const [sd, h] of Object.entries(opts.wallHalf) as [Side, number][]) inset[f.sideOf[sd]] = round(h + 0.03, 3);
+    const items = furnishLocal({ ...room, x: 0, z: 0, width: f.W, depth: f.D }, local, { requested: opts.requested, avoid, buildingKind: opts.buildingKind, inset });
     const span = spanFinder(local, f.W, f.D);
     const doorFree = span('back', ['door'], 0.3, f.W - 0.3, 1.0).len;
     const solid = span('back', ['door', 'window'], 0.3, f.W - 0.3, 1.0).len;
@@ -304,9 +307,10 @@ function layoutScore(items: FurnitureSpec[], openings: LocalOpening[], W: number
 }
 
 /** Layout presets in the local frame: back wall at z = 0, rotation 0 faces into the room (+z). */
-function furnishLocal(room: ProgramRoom, openings: LocalOpening[], opts: { requested?: string[]; avoid?: Rect | null; buildingKind?: string }): FurnitureSpec[] {
-  const m = 0.3; // clearance from wall centrelines
-  const r: Rect = { x0: room.x + m, z0: room.z + m, x1: room.x + room.width - m, z1: room.z + room.depth - m };
+function furnishLocal(room: ProgramRoom, openings: LocalOpening[], opts: { requested?: string[]; avoid?: Rect | null; buildingKind?: string; inset?: Record<LocalSide, number> }): FurnitureSpec[] {
+  // Usable rectangle: wall faces plus a small gap (0.3 m from centrelines when walls are unknown).
+  const m = opts.inset ?? { back: 0.3, front: 0.3, left: 0.3, right: 0.3 };
+  const r: Rect = { x0: room.x + m.left, z0: room.z + m.back, x1: room.x + room.width - m.right, z1: room.z + room.depth - m.front };
   if (opts.avoid) {
     // Shrink the usable rect away from a stair void, keeping the larger remainder.
     const a = opts.avoid;
@@ -480,21 +484,46 @@ function furnishLocal(room: ProgramRoom, openings: LocalOpening[], opts: { reque
       let b = back.b;
       const fr = span('front', ['door'], r.x0, r.x1, 0.8);
       const bath = w >= 2.0 && d >= 2.6 && fr.len >= 1.6;
+      if (!bath && d >= 2.6 && back.len >= 1.6) {
+        // Bath across the back wall; basin and WC on the front wall, or along a side wall
+        // beyond the bath.
+        const sideL = span('left', ['door'], r.z0 + 0.85, r.z1, 0.7);
+        const sideR = span('right', ['door'], r.z0 + 0.85, r.z1, 0.7);
+        if (fr.len >= 1.6 || Math.max(sideL.len, sideR.len) >= 1.6) {
+          const bw = Math.min(1.7, back.len - 0.05);
+          out.push(furnitureItem('bathtub', centreIn(back, bw), r.z0 + 0.38, 0, { width: round(bw, 2) }));
+          if (fr.len >= 1.6) {
+            const vw2 = fr.len >= 1.9 ? 1.0 : 0.7;
+            out.push(furnitureItem('vanity', fr.b - vw2 / 2, r.z1 - 0.25, PI, { width: vw2 }));
+            out.push(furnitureItem('toilet', fr.b - vw2 - 0.15 - 0.3, r.z1 - 0.33, PI));
+          } else {
+            const left = sideL.len >= sideR.len;
+            const sp = left ? sideL : sideR;
+            const vw2 = sp.len >= 1.9 ? 1.0 : 0.7;
+            const x = left ? r.x0 : r.x1;
+            const inward = left ? 1 : -1;
+            const rot = left ? PI / 2 : -PI / 2;
+            out.push(furnitureItem('toilet', x + inward * 0.33, sp.a + 0.3, rot));
+            out.push(furnitureItem('vanity', x + inward * 0.25, sp.a + 0.75 + vw2 / 2, rot, { width: vw2 }));
+          }
+          break;
+        }
+      }
       if (bath) {
         const bw = Math.min(1.7, fr.len - 0.05);
         out.push(furnitureItem('bathtub', centreIn(fr, bw), r.z1 - 0.38, PI, { width: round(bw, 2) }));
-      } else if (b - a >= 0.95 + 1.6 && clear('back', b - 0.9, b, ['window']) && clear('right', r.z0, r.z0 + 0.9, ['window'])) {
+      } else if (b - a >= 0.92 + 1.35 && clear('back', b - 0.9, b, ['window']) && clear('right', r.z0, r.z0 + 0.9, ['window'])) {
         out.push(furnitureItem('shower', b - 0.45, r.z0 + 0.45));
-        b -= 0.95;
+        b -= 0.92;
       }
       const placedShower = out.some((it) => it.kind === 'shower' || it.kind === 'bathtub');
       // Basin narrows before the WC loses its place.
-      const vw = b - a >= 1.9 ? 1.0 : 0.7;
+      const vw = b - a >= 1.9 ? 1.0 : b - a >= 1.5 ? 0.7 : 0.6;
       if (b - a >= vw) {
         out.push(furnitureItem('vanity', a + vw / 2, r.z0 + 0.25, 0, { width: vw }));
-        a += vw + 0.15;
+        a += vw + 0.1;
       }
-      if (b - a >= 0.75) out.push(furnitureItem('toilet', a + 0.3, r.z0 + 0.33));
+      if (b - a >= 0.68) out.push(furnitureItem('toilet', a + 0.34, r.z0 + 0.33));
       else {
         const side = span('left', ['door'], r.z0 + 0.8, r.z1, 0.7);
         if (side.len >= 0.8) out.push(furnitureItem('toilet', r.x0 + 0.33, side.a + 0.4, PI / 2));
@@ -541,6 +570,13 @@ function furnishLocal(room: ProgramRoom, openings: LocalOpening[], opts: { reque
           out.push(furnitureItem('office_chair', x, z + 0.45, PI));
         }
       }
+      break;
+    }
+    case 'storage': {
+      // Shelving along the longest solid wall.
+      const back = span('back', ['door', 'window'], r.x0, r.x1, 0.5);
+      const n = Math.floor((back.len + 0.05) / 1.25);
+      for (let i = 0; i < Math.min(n, 4); i++) out.push(furnitureItem('shelf', back.a + 0.6 + i * 1.25, r.z0 + 0.18, 0, {}));
       break;
     }
     case 'hall': {

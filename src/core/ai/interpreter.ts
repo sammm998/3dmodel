@@ -8,7 +8,8 @@
  * and a clarifying message instead of guessing.
  */
 import { findClashes, resolveFurnitureClashes } from '../scene/clashes';
-import type { Element, ElementType, FurnitureElement, FurnitureKind, Vec2 } from '../schema/elements';
+import { duplicateRoomOps, ROOM_TEMPLATES, roomTemplateOps } from '../scene/rooms';
+import type { Element, ElementType, FurnitureElement, FurnitureKind, RoomElement, Vec2 } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import type { OperationInput } from '../ops/operations';
 import type { BuildingProgramInput } from '../generator/program';
@@ -85,7 +86,7 @@ function toMeters(value: number, unit: string | undefined): number {
 const UNIT = `(mm|cm|dm|m|meters?|metres?|meter|millimet(?:er|re)s?|centimet(?:er|re)s?)?`;
 
 export function detectLanguage(text: string): 'en' | 'sv' {
-  return /\b(och|gör|den här|detta|denna|det här|ändra|byt|skapa|bygg|lägg till|ta bort|flytta|fönster|dörr|vägg|tak|med|till|större|mindre|bredare|högre|våning|rum)\b|[åäö]/i.test(text) ? 'sv' : 'en';
+  return /\b(och|gör|den här|detta|denna|det här|ändra|byt|skapa|bygg|lägg till|ta bort|flytta|kopiera|duplicera|infoga|ordna|fönster|dörr|vägg|tak|med|till|större|mindre|bredare|högre|våning|rum)\b|[åäö]/i.test(text) ? 'sv' : 'en';
 }
 
 const t = (lang: 'en' | 'sv', en: string, sv: string) => (lang === 'sv' ? sv : en);
@@ -95,6 +96,9 @@ export function interpret(text: string, ctx: InterpretContext): InterpretResult 
   const raw = text.trim();
   const lang = detectLanguage(raw);
   const lower = raw.toLowerCase().replace(/[“”"]/g, '').replace(/\s+/g, ' ');
+
+  const rooms = roomCommand(lower, lang, ctx);
+  if (rooms) return rooms;
 
   if (isGenerationRequest(lower, ctx)) {
     const program = parseBuildingProgram(lower);
@@ -353,6 +357,57 @@ export function parseBuildingProgram(lower: string): BuildingProgramInput {
 }
 
 // ---------------------------------------------------------------------------
+/** Room words → template ids (most specific first) and the room names they refer to. */
+const ROOM_WORDS: [RegExp, string, RegExp][] = [
+  [/family bathroom|familjebadrum/, 'family-bathroom', /bathroom/i],
+  [/master bedroom|huvudsovrum|master/, 'master-bedroom', /master bedroom/i],
+  [/bedroom|sovrum(met)?/, 'bedroom', /bedroom/i],
+  [/bathroom|\bwc\b|toilet|badrum(met)?|toalett(en)?/, 'bathroom', /bathroom|wc/i],
+  [/kitchen|kök(et)?/, 'kitchen', /kitchen/i],
+  [/living room|lounge|vardagsrum(met)?/, 'living-room', /living/i],
+  [/dining room|dining|matsal(en)?|matrum(met)?/, 'dining-room', /dining/i],
+  [/home office|study|office|hemmakontor(et)?|arbetsrum(met)?|kontor(et)?/, 'home-office', /office/i],
+];
+
+/** "copy the master bedroom", "kopiera sovrummet", "add a bathroom", "lägg till ett kök". */
+function roomCommand(lower: string, lang: 'en' | 'sv', ctx: InterpretContext): InterpretResult | null {
+  const { scene } = ctx;
+  if (/\b(copy|duplicate|clone)\b|\b(kopiera|duplicera)/.test(lower)) {
+    const selected = ctx.selectedIds.map((id) => findElement(scene, id)).find(Boolean);
+    let room = selected?.type === 'room' ? selected : selected ? roomContaining(scene, selected) : undefined;
+    if (!room) {
+      const all = scene.elements.filter((e): e is RoomElement => e.type === 'room');
+      room = all.filter((r) => lower.includes(r.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0];
+      if (!room) {
+        const hit = ROOM_WORDS.find(([re]) => re.test(lower));
+        if (hit) room = all.find((r) => hit[2].test(r.name));
+      }
+    }
+    if (!room || room.type !== 'room') return null;
+    const ops = duplicateRoomOps(scene, room.id);
+    return {
+      understood: true,
+      language: lang,
+      message: t(lang, `I'll copy ${room.name} — walls, doors, windows, floor and furniture — beside the building.`, `Jag kopierar ${room.name} — väggar, dörrar, fönster, golv och möbler — bredvid byggnaden.`),
+      operations: ops,
+      needsConfirmation: false,
+    };
+  }
+  if (scene.elements.length && /^(please |can you |kan du )?(add|insert|place|lägg till|infoga|placera)\b/.test(lower) && !/\b(to|in|on|into|till|i|på)\b (the|this|that|den|det|rummet|väggen)/.test(lower)) {
+    const hit = ROOM_WORDS.find(([re]) => re.test(lower));
+    if (!hit) return null;
+    const tpl = ROOM_TEMPLATES.find((x) => x.id === hit[1])!;
+    return {
+      understood: true,
+      language: lang,
+      message: t(lang, `I'll add a furnished ${tpl.name.toLowerCase()} (${tpl.description.split('·')[1]?.trim() ?? ''}) beside the building — move it into place with the Move tool.`, `Jag lägger till ett möblerat ${tpl.nameSv.toLowerCase()} (${tpl.description.split('·')[1]?.trim() ?? ''}) bredvid byggnaden — flytta det på plats med Flytta-verktyget.`),
+      operations: roomTemplateOps(scene, tpl.id),
+      needsConfirmation: false,
+    };
+  }
+  return null;
+}
+
 function needsTarget(lower: string) {
   return /\b(this|these|it|its|selected|den här|detta|denna|det här|dessa|den|det)\b/.test(lower) || /\b(make|change|move|rotate|delete|remove|gör|ändra|flytta|rotera|ta bort|byt)\b/.test(lower);
 }

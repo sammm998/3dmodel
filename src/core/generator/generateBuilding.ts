@@ -673,8 +673,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       const lvl = levels[r.level];
       if (!lvl) continue;
       const stair = stairPlacements.find((s) => s.level === r.level)?.rect ?? stairRects[r.level] ?? null;
-      const openings = roomOpenings(scene, lvl.id, r);
-      for (const f of furnishRoom(r, { requested: P.furniture, avoid: stair, openings, buildingKind: P.kind })) {
+      const { openings, wallHalf } = roomOpenings(scene, lvl.id, r);
+      for (const f of furnishRoom(r, { requested: P.furniture, avoid: stair, openings, wallHalf, buildingKind: P.kind })) {
         add(createElement(scene, { ...f, type: 'furniture', levelId: lvl.id }));
       }
     }
@@ -781,7 +781,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
 
   // Final planning pass: no furniture in door clearances, in front of glazing, on stairs,
   // in walls or in other furniture. Pieces are moved to the nearest free spot or left out.
-  const resolved = opts.resolveClashes === false ? { scene, moved: [], removed: [] } : resolveFurnitureClashes(scene);
+  // When adding to an existing scene, only the new pieces are re-placed; the user's own stay put.
+  const resolved = opts.resolveClashes === false ? { scene, moved: [], removed: [] } : resolveFurnitureClashes(scene, fresh ? {} : { only: created.filter((id) => scene.elements.some((e) => e.id === id && e.type === 'furniture')) });
   if (resolved.removed.length || resolved.moved.length) {
     scene.elements = resolved.scene.elements;
     const gone = new Set(resolved.removed);
@@ -795,14 +796,33 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
   return { scene, createdIds: created, summary };
 }
 
-/** Doors and windows in the sides of a rectangular room, for furnishing around them. */
-function roomOpenings(scene: Scene, levelId: string, r: ProgramRoom): RoomOpening[] {
+/** Doors and windows in the sides of a rectangular room, and the wall thickness on each side. */
+function roomOpenings(scene: Scene, levelId: string, r: ProgramRoom): { openings: RoomOpening[]; wallHalf: Partial<Record<RoomOpening['side'], number>> } {
   const out: RoomOpening[] = [];
+  const wallHalf: Partial<Record<RoomOpening['side'], number>> = {};
   const x0 = r.x;
   const z0 = r.z;
   const x1 = r.x + r.width;
   const z1 = r.z + r.depth;
+  const sideOf = (w: WallElement): RoomOpening['side'] | null => {
+    const f = wallFrame(w);
+    const tol = 0.03;
+    if (Math.abs(f.dir.z) < 0.1) {
+      if (Math.max(w.start.x, w.end.x) <= x0 + tol || Math.min(w.start.x, w.end.x) >= x1 - tol) return null;
+      if (Math.abs(w.start.z - z0) < tol) return 'n';
+      if (Math.abs(w.start.z - z1) < tol) return 's';
+    } else if (Math.abs(f.dir.x) < 0.1) {
+      if (Math.max(w.start.z, w.end.z) <= z0 + tol || Math.min(w.start.z, w.end.z) >= z1 - tol) return null;
+      if (Math.abs(w.start.x - x0) < tol) return 'w';
+      if (Math.abs(w.start.x - x1) < tol) return 'e';
+    }
+    return null;
+  };
   for (const e of scene.elements) {
+    if (e.type === 'wall' && e.levelId === levelId) {
+      const side = sideOf(e);
+      if (side) wallHalf[side] = Math.max(wallHalf[side] ?? 0, e.thickness / 2);
+    }
     if ((e.type !== 'door' && e.type !== 'window') || e.levelId !== levelId) continue;
     const host = findElement(scene, e.hostId);
     if (!host || host.type !== 'wall') continue;
@@ -820,7 +840,7 @@ function roomOpenings(scene: Scene, levelId: string, r: ProgramRoom): RoomOpenin
       else if (Math.abs(p.x - x1) < tol) out.push({ kind: e.type, side: 'e', a: p.z - half, b: p.z + half });
     }
   }
-  return out;
+  return { openings: out, wallHalf };
 }
 
 // ---------------------------------------------------------------------------------
@@ -950,7 +970,29 @@ const CORRIDOR_W = 1.2;
  * front band with whatever private rooms fit beside them; the rest go to the back.
  * Returns null when the rooms do not fit this way.
  */
-function corridorLayout<T extends SliceItem & { fn: RoomFunction }>(items: T[], area: Rect): { parts: { item: T; rect: Rect }[]; corridor: Rect } | null {
+function corridorLayout<T extends SliceItem & { fn: RoomFunction; name: string }>(items: T[], area: Rect): { parts: { item: T; rect: Rect }[]; corridor: Rect } | null {
+  const score = (parts: { item: T; rect: Rect }[]) => parts.reduce((a, p) => a + leafPenalty(p.item, p.rect), 0);
+  let best = bandLayout(items, area);
+  // A long floor makes long, narrow band rooms: let the corridor end at a room that
+  // spans the full depth instead (typically the master bedroom or living room).
+  if (items.length >= 3) {
+    const D = area.z1 - area.z0;
+    const total = items.reduce((a, i) => a + i.weight, 0);
+    for (const end of [...items].sort((a, b) => b.weight - a.weight).slice(0, 2)) {
+      const endW = round(Math.max(end.minSide, Math.min((area.x1 - area.x0) * (end.weight / total), D * 0.9)), 2);
+      const rest = bandLayout(
+        items.filter((i) => i !== end),
+        { ...area, x1: round(area.x1 - endW) },
+      );
+      if (!rest) continue;
+      const cand = { parts: [...rest.parts, { item: end, rect: { ...area, x0: round(area.x1 - endW) } }], corridor: rest.corridor };
+      if (!best || score(cand.parts) < score(best.parts) - 0.05) best = cand;
+    }
+  }
+  return best;
+}
+
+function bandLayout<T extends SliceItem & { fn: RoomFunction; name: string }>(items: T[], area: Rect): { parts: { item: T; rect: Rect }[]; corridor: Rect } | null {
   const W = area.x1 - area.x0;
   const D = area.z1 - area.z0;
   if (D < 2 * 2.9 + CORRIDOR_W || W < 4.5) return null;
@@ -987,11 +1029,22 @@ function corridorLayout<T extends SliceItem & { fn: RoomFunction }>(items: T[], 
     const spare = W - mins.reduce((a, b) => a + b, 0);
     const wsum = sum(list);
     let x = area.x0;
-    return list.map((item, k) => {
+    const depth = z1 - z0;
+    return list.flatMap((item, k) => {
       const w = k === list.length - 1 ? area.x1 - x : round(mins[k] + (spare * item.weight) / wsum, 2);
       const rect = { x0: round(x), z0: z0, x1: round(x + w), z1: z1 };
       x += w;
-      return { item, rect };
+      // A private room much longer than deep gives its far end to a store room off the corridor.
+      const excess = w - 2 * depth;
+      if (!OPEN_PLAN.includes(item.fn) && excess >= 1.2) {
+        const cut = round(rect.x1 - excess);
+        const store = { ...item, fn: 'storage' as RoomFunction, name: 'Storage', weight: 4, minSide: 1.2 };
+        return [
+          { item, rect: { ...rect, x1: cut } },
+          { item: store, rect: { ...rect, x0: cut } },
+        ];
+      }
+      return [{ item, rect }];
     });
   };
   const zc0 = round(area.z0 + dBack);
