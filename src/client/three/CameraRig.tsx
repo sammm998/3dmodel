@@ -141,6 +141,105 @@ export function CameraRig() {
   return walkMode ? (
     <WalkControls />
   ) : (
-    <OrbitControls makeDefault enableDamping dampingFactor={0.08} rotateSpeed={0.8} zoomSpeed={0.9} maxPolarAngle={Math.PI * 0.495} minDistance={0.3} maxDistance={1500} screenSpacePanning />
+    <>
+      <OrbitControls makeDefault enableDamping dampingFactor={0.08} rotateSpeed={0.8} zoomSpeed={0.9} maxPolarAngle={Math.PI * 0.495} minDistance={0.3} maxDistance={1500} screenSpacePanning />
+      <KeyboardNav />
+    </>
   );
+}
+
+const NAV_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown', 'KeyQ', 'KeyZ']);
+
+/** Typing into a field must not move the camera. */
+function typing(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  if (!t) return false;
+  const tag = t.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+}
+
+/**
+ * Keyboard navigation in the orbit views: W/A/S/D or the arrow keys move the camera
+ * (and its orbit centre) forward, back, left and right in plan; Q / PageUp rises,
+ * Z / PageDown sinks; Shift moves faster. Speed follows the viewing distance, with
+ * smooth acceleration and braking.
+ */
+function KeyboardNav() {
+  const { camera, invalidate } = useThree();
+  const controls = useThree((s) => s.controls) as unknown as Controls | null;
+  const keys = useRef(new Set<string>());
+  const shift = useRef(false);
+  const vel = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (typing(e) || e.metaKey || e.ctrlKey || e.altKey || !NAV_KEYS.has(e.code)) return;
+      e.preventDefault();
+      keys.current.add(e.code);
+      shift.current = e.shiftKey;
+      invalidate();
+    };
+    const up = (e: KeyboardEvent) => {
+      keys.current.delete(e.code);
+      shift.current = e.shiftKey;
+      invalidate();
+    };
+    const clear = () => keys.current.clear();
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', clear);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', clear);
+    };
+  }, [invalidate]);
+
+  useFrame((_, delta) => {
+    if (!controls || !('target' in controls)) return;
+    const k = keys.current;
+    // Frame-rate independent; slow frames still move (capped so a stall does not jump).
+    const dt = Math.min(delta, 0.1);
+    // Plan directions from the view: forward is where the camera looks (or "up" on screen in a top view).
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    const fwd = new THREE.Vector3(dir.x, 0, dir.z);
+    if (fwd.lengthSq() < 1e-4) {
+      const upv = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+      fwd.set(upv.x, 0, upv.z);
+    }
+    fwd.normalize();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const want = new THREE.Vector3();
+    if (k.has('KeyW') || k.has('ArrowUp')) want.add(fwd);
+    if (k.has('KeyS') || k.has('ArrowDown')) want.sub(fwd);
+    if (k.has('KeyD') || k.has('ArrowRight')) want.add(right);
+    if (k.has('KeyA') || k.has('ArrowLeft')) want.sub(right);
+    if (k.has('KeyQ') || k.has('PageUp')) want.y += 1;
+    if (k.has('KeyZ') || k.has('PageDown')) want.y -= 1;
+    const dist = camera.position.distanceTo(controls.target);
+    const ortho = camera as THREE.OrthographicCamera;
+    const reach = ortho.isOrthographicCamera ? 600 / Math.max(ortho.zoom, 1) : dist;
+    const speed = THREE.MathUtils.clamp(reach * 0.7, 1.5, 80) * (shift.current ? 2.5 : 1);
+    if (want.lengthSq() > 0) want.normalize().multiplyScalar(speed);
+    // Ease towards the wanted velocity (fast start, short glide when released).
+    vel.current.lerp(want, 1 - Math.exp(-dt * (want.lengthSq() > 0 ? 9 : 12)));
+    if (vel.current.lengthSq() < 1e-5) {
+      if (vel.current.lengthSq() > 0) {
+        vel.current.set(0, 0, 0);
+        // Keep "left/right" in the assistant in sync with the new view.
+        const f2 = { x: fwd.x, z: fwd.z };
+        useEditor.getState().set({ viewVectors: { forward: f2, right: { x: -f2.z, z: f2.x } } });
+      }
+      return;
+    }
+    const step = vel.current.clone().multiplyScalar(dt);
+    // Do not sink the orbit centre below the ground.
+    if (controls.target.y + step.y < 0) step.y = -controls.target.y;
+    camera.position.add(step);
+    controls.target.add(step);
+    controls.update();
+    invalidate();
+  });
+  return null;
 }

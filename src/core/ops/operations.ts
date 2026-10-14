@@ -103,6 +103,27 @@ export const GenerateBuildingOp = z.object({
   origin: z.object({ x: z.number(), z: z.number() }).optional(),
 });
 
+/** Repeat an element: copies along a line (step) or around an axis (radial). */
+export const ArrayOp = z.object({
+  op: z.literal('array'),
+  id: Id,
+  /** Total number including the original. */
+  count: z.number().int().min(2).max(400),
+  step: z.object({ x: z.number().finite().optional(), y: z.number().finite().optional(), z: z.number().finite().optional() }).optional(),
+  radial: z
+    .object({
+      center: z.object({ x: z.number().finite(), y: z.number().finite().optional(), z: z.number().finite() }),
+      axis: z.enum(['x', 'y', 'z']).default('y'),
+      /** Total sweep; 360 spreads the copies evenly round a full circle. */
+      angleDeg: z.number().min(-360).max(360).default(360),
+      /** Copies keep the original's orientation (e.g. gondolas that hang level). */
+      keepUpright: z.boolean().default(false),
+      /** With keepUpright: the point the part hangs from (it travels round the circle). */
+      hangFrom: z.object({ x: z.number().finite(), y: z.number().finite(), z: z.number().finite() }).optional(),
+    })
+    .optional(),
+});
+
 export const GroupOp = z.object({
   op: z.literal('group'),
   ids: z.array(Id).min(1),
@@ -121,6 +142,7 @@ export const Operation = z.discriminatedUnion('op', [
   AddLevelOp,
   GenerateBuildingOp,
   GroupOp,
+  ArrayOp,
 ]);
 export type Operation = z.infer<typeof Operation>;
 export type OperationInput = z.input<typeof Operation>;

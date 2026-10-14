@@ -94,9 +94,11 @@ export function WalkControls() {
           solid.push(el.type === 'door' ? { obj, box: c.box.clone().expandByScalar(1.1) } : c);
         }
         if (el.type === 'door') doors.current.push(...collectDoorParts(obj, c.box));
-        const passable = el.type === 'furniture' && (PASSABLE_FURNITURE.has(el.kind) || el.height < 0.25);
+        // Rings and tilted parts would block (or carry) their whole bounding box: leave them out.
+        const openShape = el.type === 'box' && (el.shape === 'torus' || Math.abs(el.tiltX ?? 0) > 1e-3 || Math.abs(el.tiltZ ?? 0) > 1e-3);
+        const passable = openShape || (el.type === 'furniture' && (PASSABLE_FURNITURE.has(el.kind) || el.height < 0.25));
         if (BLOCKING.includes(el.type) && !passable) block.push(c);
-        if (GROUND.includes(el.type)) ground.push(c);
+        if (GROUND.includes(el.type) && !openShape) ground.push(c);
       }
       physics.block = block;
       physics.ground = ground;

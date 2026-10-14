@@ -357,6 +357,10 @@ function LibraryPanel() {
     { label: 'Gable roof', type: 'roof', onAdd: () => add([{ op: 'create', element: { type: 'roof', levelId: st().activeLevelId, center: p() } }], 'Add roof') },
     { label: 'Pool', type: 'pool', onAdd: () => add([{ op: 'create', element: { type: 'pool', levelId: st().activeLevelId, center: p() } }], 'Add pool') },
     { label: 'Box', type: 'box', onAdd: () => add([{ op: 'create', element: { type: 'box', levelId: st().activeLevelId, position: { ...p(), y: 0 } } }], 'Add box') },
+    { label: 'Cylinder', type: 'box', onAdd: () => add([{ op: 'create', element: { type: 'box', shape: 'cylinder', name: 'Cylinder', levelId: st().activeLevelId, position: { ...p(), y: 0 }, width: 0.6, depth: 0.6, height: 1, material: 'steel' } }], 'Add cylinder') },
+    { label: 'Sphere', type: 'box', onAdd: () => add([{ op: 'create', element: { type: 'box', shape: 'sphere', name: 'Sphere', levelId: st().activeLevelId, position: { ...p(), y: 0 }, width: 0.8, depth: 0.8, height: 0.8, material: 'paint_white' } }], 'Add sphere') },
+    { label: 'Ring', type: 'box', onAdd: () => add([{ op: 'create', element: { type: 'box', shape: 'torus', name: 'Ring', levelId: st().activeLevelId, position: { ...p(), y: 0 }, width: 2, depth: 0.15, height: 2, thickness: 0.15, material: 'steel' } }], 'Add ring') },
+    { label: 'Rounded block', type: 'box', onAdd: () => add([{ op: 'create', element: { type: 'box', name: 'Rounded block', levelId: st().activeLevelId, position: { ...p(), y: 0 }, width: 1.2, depth: 0.8, height: 0.8, cornerRadius: 0.12, material: 'oak' } }], 'Add rounded block') },
   ];
   return (
     <div className="space-y-3 overflow-y-auto px-3 pb-4">

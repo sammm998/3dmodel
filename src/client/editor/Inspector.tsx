@@ -32,12 +32,25 @@ const FIELDS: Record<ElementType, Field[]> = {
   skylight: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'length', label: 'Length', kind: 'length' }, { key: 'u', label: 'Offset X', kind: 'length' }, { key: 'v', label: 'Offset Z', kind: 'length' }, { key: 'frameMaterial', label: 'Frame', kind: 'material' }, { key: 'glazingMaterial', label: 'Glazing', kind: 'material' }],
   stair: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'totalRise', label: 'Total rise', kind: 'length' }, { key: 'totalRun', label: 'Total run', kind: 'length' }, { key: 'steps', label: 'Steps', kind: 'int', min: 2 }, { key: 'rotation', label: 'Rotation', kind: 'rad' }, { key: 'material', label: 'Treads', kind: 'material' }],
   column: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'height', label: 'Height', kind: 'length' }, { key: 'shape', label: 'Shape', kind: 'enum', options: ['rect', 'round'] }, { key: 'rotation', label: 'Rotation', kind: 'rad' }, { key: 'material', label: 'Material', kind: 'material' }],
-  beam: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'material', label: 'Material', kind: 'material' }],
+  beam: [name, { key: 'profile', label: 'Profile', kind: 'enum', options: ['rect', 'round'] }, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'material', label: 'Material', kind: 'material' }],
   room: [name, { key: 'function', label: 'Function', kind: 'enum', options: ['living', 'kitchen', 'dining', 'bedroom', 'bathroom', 'office', 'hall', 'storage', 'garage', 'terrace', 'other'] }, { key: 'floorMaterial', label: 'Floor finish', kind: 'optMaterial' }],
   furniture: [name, { key: 'kind', label: 'Kind', kind: 'enum', options: FurnitureKind.options }, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'height', label: 'Height', kind: 'length' }, { key: 'rotation', label: 'Rotation', kind: 'rad' }, { key: 'material', label: 'Primary', kind: 'material' }, { key: 'secondaryMaterial', label: 'Secondary', kind: 'optMaterial' }],
   terrain: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'elevation', label: 'Elevation', kind: 'length' }, { key: 'material', label: 'Surface', kind: 'material' }],
   pool: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'length', label: 'Length', kind: 'length' }, { key: 'waterDepth', label: 'Water depth', kind: 'length' }, { key: 'rotation', label: 'Rotation', kind: 'rad' }, { key: 'material', label: 'Basin', kind: 'material' }, { key: 'copingMaterial', label: 'Coping', kind: 'material' }],
-  box: [name, { key: 'width', label: 'Width', kind: 'length' }, { key: 'depth', label: 'Depth', kind: 'length' }, { key: 'height', label: 'Height', kind: 'length' }, { key: 'rotation', label: 'Rotation', kind: 'rad' }, { key: 'material', label: 'Material', kind: 'material' }],
+  box: [
+    name,
+    { key: 'shape', label: 'Shape', kind: 'enum', options: ['box', 'cylinder', 'sphere', 'cone', 'torus', 'capsule'] },
+    { key: 'width', label: 'Width', kind: 'length' },
+    { key: 'depth', label: 'Depth', kind: 'length' },
+    { key: 'height', label: 'Height', kind: 'length' },
+    { key: 'rotation', label: 'Rotation', kind: 'rad' },
+    { key: 'tiltX', label: 'Tilt X', kind: 'rad' },
+    { key: 'tiltZ', label: 'Tilt Z', kind: 'rad' },
+    { key: 'cornerRadius', label: 'Corner radius', kind: 'length' },
+    { key: 'thickness', label: 'Ring tube', kind: 'length' },
+    { key: 'arcDeg', label: 'Sweep (°)', kind: 'deg' },
+    { key: 'material', label: 'Material', kind: 'material' },
+  ],
 };
 
 function valueOf(el: Element, key: string): unknown {

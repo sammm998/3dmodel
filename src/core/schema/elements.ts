@@ -177,6 +177,8 @@ export const BeamElement = z.object({
   end: Vec3,
   width: pos(5),
   depth: pos(5),
+  /** Cross-section: rectangular (width × depth) or round (tube/rod, diameter = width). */
+  profile: z.enum(['rect', 'round']).default('rect'),
   material: MaterialRef,
 });
 export type BeamElement = z.infer<typeof BeamElement>;
@@ -261,6 +263,16 @@ export const PoolElement = z.object({
 export type PoolElement = z.infer<typeof PoolElement>;
 
 /** Generic parametric box, used for custom objects and AI-created primitives. */
+export const SolidShape = z.enum(['box', 'cylinder', 'sphere', 'cone', 'torus', 'capsule']);
+export type SolidShape = z.infer<typeof SolidShape>;
+
+/**
+ * Generic solid ("object"): a box, cylinder, sphere, cone, torus (ring) or capsule
+ * fitted in a width × height × depth bounding box whose bottom centre is `position`.
+ * It turns by `rotation` about Y, then tilts by `tiltX` / `tiltZ` about its centre.
+ * Cylinders, cones and capsules stand along Y; a torus lies in its local X–Y plane
+ * (a wheel facing ±Z) with tube diameter `thickness`.
+ */
 export const BoxElement = z.object({
   ...base,
   type: z.literal('box'),
@@ -270,6 +282,17 @@ export const BoxElement = z.object({
   depth: pos(1000),
   height: pos(1000),
   material: MaterialRef,
+  shape: SolidShape.default('box'),
+  tiltX: z.number().finite().default(0),
+  tiltZ: z.number().finite().default(0),
+  /** Rounded edges for boxes (m). */
+  cornerRadius: z.number().min(0).max(50).default(0),
+  /** Torus tube diameter (m). */
+  thickness: z.number().positive().max(100).optional(),
+  /** Top / bottom radius ratio for cylinders and cones (cone default 0). */
+  taper: z.number().min(0).max(20).optional(),
+  /** Partial sweep for cylinders, cones and tori (degrees). */
+  arcDeg: z.number().min(1).max(360).default(360),
 });
 export type BoxElement = z.infer<typeof BoxElement>;
 

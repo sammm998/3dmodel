@@ -9,12 +9,13 @@
  */
 import { findClashes, resolveFurnitureClashes } from '../scene/clashes';
 import { duplicateRoomOps, ROOM_TEMPLATES, roomTemplateOps } from '../scene/rooms';
+import { ferrisWheelOps } from '../samples/ferrisWheel';
 import type { Element, ElementType, FurnitureElement, FurnitureKind, RoomElement, Vec2 } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import type { OperationInput } from '../ops/operations';
 import type { BuildingProgramInput } from '../generator/program';
 import { findMaterialByText, type MaterialCategory } from '../materials/library';
-import { elementAnchor, findElement, levelOf, roomContaining, wallFrame, openingsOf } from '../scene/query';
+import { elementAnchor, findElement, levelOf, roomContaining, sceneBounds, wallFrame, openingsOf } from '../scene/query';
 import { FURNITURE_DEFAULTS, matchFurnitureKind } from '../generator/furnish';
 import { round } from '../geometry/math2d';
 
@@ -99,6 +100,23 @@ export function interpret(text: string, ctx: InterpretContext): InterpretResult 
 
   const rooms = roomCommand(lower, lang, ctx);
   if (rooms) return rooms;
+
+  // Detailed sample objects.
+  if (/pariserhjul|parisdjul|ferris wheel|big wheel|observation wheel/.test(lower)) {
+    const b = sceneBounds({ ...ctx.scene, elements: ctx.scene.elements.filter((e) => e.type !== 'terrain') });
+    const at = b ? { x: round(b.max.x + 14, 2), z: round((b.min.z + b.max.z) / 2, 2) } : { x: 0, z: 0 };
+    return {
+      understood: true,
+      language: lang,
+      message: t(
+        lang,
+        `I'll build a 19 m Ferris wheel beside the building: twin steel rims, 32 spokes per side, A-frame legs with bearings, and 16 glazed gondolas hanging level, on a concrete base with a boarding platform.`,
+        `Jag bygger ett 19 m högt pariserhjul bredvid byggnaden: dubbla stålringar, 32 ekrar per sida, A-ben med lager och 16 glasade gondoler som hänger rakt, på en betongplatta med påstigningsplattform.`,
+      ),
+      operations: ferrisWheelOps(at),
+      needsConfirmation: false,
+    };
+  }
 
   if (isGenerationRequest(lower, ctx)) {
     const program = parseBuildingProgram(lower);

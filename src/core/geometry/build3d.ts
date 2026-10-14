@@ -25,7 +25,7 @@ import type {
 import type { Scene } from '../schema/scene';
 import { computeWallExtensions, findElement, levelOf, wallFrame } from '../scene/query';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { boxGeometry, orientOutward, polygonsGeometry, prismPolygons } from './primitives';
+import { boxGeometry, orientOutward, polygonsGeometry, prismPolygons, solidGeometry } from './primitives';
 
 export type MaterialFn = (ref: string) => THREE.Material;
 
@@ -107,9 +107,17 @@ export function buildElementObject(el: Element, ctx: BuildContext): THREE.Object
       const a = new THREE.Vector3(el.start.x, lvl.elevation + el.start.y, el.start.z);
       const b = new THREE.Vector3(el.end.x, lvl.elevation + el.end.y, el.end.z);
       const len = a.distanceTo(b);
-      const m = addBox(g, ctx.material(el.material), len, el.depth, el.width, 0, 0, 0);
+      let m: THREE.Mesh;
+      if (el.profile === 'round') {
+        // Tube / rod: a cylinder along the beam axis.
+        m = new THREE.Mesh(solidGeometry({ shape: 'cylinder', width: el.width, height: len, depth: el.width }), ctx.material(el.material));
+        g.add(m);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+      } else {
+        m = addBox(g, ctx.material(el.material), len, el.depth, el.width, 0, 0, 0);
+        m.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), b.clone().sub(a).normalize());
+      }
       m.position.copy(a).add(b).multiplyScalar(0.5);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), b.clone().sub(a).normalize());
       obj = g;
       break;
     }
@@ -126,10 +134,18 @@ export function buildElementObject(el: Element, ctx: BuildContext): THREE.Object
       obj = buildPool(el, ctx, lvl.elevation);
       break;
     case 'box': {
+      // Bottom centre at `position`; turned about Y, then tilted about the solid's centre.
       const g = new THREE.Group();
-      addBox(g, ctx.material(el.material), el.width, el.height, el.depth, 0, el.height / 2, 0);
+      const pivot = new THREE.Group();
+      pivot.position.set(0, el.height / 2, 0);
+      pivot.rotation.set(el.tiltX ?? 0, el.rotation, el.tiltZ ?? 0, 'YXZ');
+      const mesh = new THREE.Mesh(
+        solidGeometry({ shape: el.shape ?? 'box', width: el.width, height: el.height, depth: el.depth, cornerRadius: el.cornerRadius, thickness: el.thickness, taper: el.taper, arcDeg: el.arcDeg }),
+        ctx.material(el.material),
+      );
+      pivot.add(mesh);
+      g.add(pivot);
       g.position.set(el.position.x, lvl.elevation + el.position.y, el.position.z);
-      g.rotation.y = el.rotation;
       obj = g;
       break;
     }

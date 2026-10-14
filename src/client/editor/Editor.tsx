@@ -335,7 +335,8 @@ function useShortcuts(save: (manual?: boolean) => void, openExport: () => void) 
         if (r.ok) st.notify(`Deleted ${r.changes.filter((c) => c.kind === 'deleted').length} object(s) — ⌘Z to undo`);
         return;
       }
-      const tools: Record<string, typeof st.tool> = { v: 'select', g: 'move', r: 'rotate', s: 'scale', m: 'measure' };
+      // W/A/S/D, arrows, Q/Z move the camera (see KeyboardNav); scale is T.
+      const tools: Record<string, typeof st.tool> = { v: 'select', g: 'move', r: 'rotate', t: 'scale', m: 'measure' };
       if (tools[k] && !st.readOnly) return st.set({ tool: tools[k], measure: { points: [] } });
       const views: Record<string, Parameters<typeof st.requestView>[0]> = { '1': 'iso', '2': 'top', '3': 'front', '4': 'right', f: 'fit' };
       if (views[k]) return st.requestView(views[k]);

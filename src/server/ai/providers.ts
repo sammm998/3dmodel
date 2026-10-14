@@ -42,7 +42,8 @@ export class ProviderError extends Error {
   }
 }
 
-const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 90000);
+// Detailed objects can take a while to write out; the browser waits 150 s.
+const TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS ?? 140000);
 
 async function post(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
   const ctrl = new AbortController();

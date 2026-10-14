@@ -15,7 +15,7 @@ interface Proposal {
   note?: string;
 }
 
-const LLM_TIMEOUT_MS = 75_000;
+const LLM_TIMEOUT_MS = 150_000;
 let llmAbort: AbortController | null = null;
 
 /** Stops a running LLM request; the built-in interpreter answers instead. */

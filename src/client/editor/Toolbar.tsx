@@ -12,7 +12,7 @@ const TOOLS: { id: Tool; label: string; key: string; icon: React.ComponentType<{
   { id: 'select', label: 'Select', key: 'V', icon: MousePointer2 },
   { id: 'move', label: 'Move', key: 'G', icon: Move },
   { id: 'rotate', label: 'Rotate', key: 'R', icon: RotateCw },
-  { id: 'scale', label: 'Scale / resize', key: 'S', icon: Scaling },
+  { id: 'scale', label: 'Scale / resize', key: 'T', icon: Scaling },
   { id: 'measure', label: 'Measure', key: 'M', icon: Ruler },
 ];
 

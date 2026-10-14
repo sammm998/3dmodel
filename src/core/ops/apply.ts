@@ -22,6 +22,7 @@ import {
   wallsTouchingPoint,
 } from '../scene/query';
 import { createElement } from '../scene/factory';
+import { arrayCopies } from '../scene/array';
 import { validateScene, type SceneIssue } from './validate';
 import { Operation, type OperationInput } from './operations';
 
@@ -369,6 +370,14 @@ export function applyOperations(input: Scene, rawOps: (Operation | OperationInpu
               s.elements = g.scene.elements;
               s.levels = g.scene.levels;
               s.counters = g.scene.counters;
+            }
+            break;
+          }
+          case 'array': {
+            const el = get(op.id);
+            for (const draft of arrayCopies(el, op)) {
+              const copy = createElement(s, resolveDraft(draft), { levelId: el.levelId });
+              s.elements.push(copy);
             }
             break;
           }
