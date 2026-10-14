@@ -7,6 +7,7 @@ import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 import { viewportHandles } from './registry';
 import { WalkControls } from './Walk';
+import { DroneDirector } from './DroneDirector';
 
 type Controls = { target: THREE.Vector3; update: () => void; enabled: boolean; addEventListener: (t: string, f: () => void) => void; removeEventListener: (t: string, f: () => void) => void };
 
@@ -28,6 +29,7 @@ export function CameraRig() {
   const controls = useThree((s) => s.controls) as unknown as Controls | null;
   const viewRequest = useEditor((s) => s.viewRequest);
   const walkMode = useEditor((s) => s.walkMode);
+  const droneMode = useEditor((s) => s.droneMode);
   const cameraKind = useEditor((s) => s.camera);
   const tween = useRef<Tween | null>(null);
   const firstView = useRef(true);
@@ -135,6 +137,7 @@ export function CameraRig() {
     if (t >= 1) tween.current = null;
   });
 
+  if (droneMode) return <DroneDirector />;
   return walkMode ? (
     <WalkControls />
   ) : (

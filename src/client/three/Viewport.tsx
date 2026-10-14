@@ -105,6 +105,9 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const levels = useEditor((s) => s.scene.levels);
   const containerRef = useRef<HTMLDivElement>(null);
   const walkMode = useEditor((s) => s.walkMode);
+  const droneMode = useEditor((s) => s.droneMode);
+  // Walking or recording a drone flight: no editing overlays, camera driven by code.
+  const firstPerson = walkMode || droneMode;
   // Adaptive quality: resolution and AO follow the measured frame rate.
   // window.__AI3D_HQ__ (set by capture scripts) pins full quality regardless of frame rate.
   const hq = typeof window !== 'undefined' && !!(window as unknown as { __AI3D_HQ__?: number }).__AI3D_HQ__;
@@ -113,7 +116,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const style = viewMode === 'modeling' ? 'technical' : 'realistic';
   // Keyed on content, not identity: every edit clones the scene, which must not rebuild all materials.
   const customKey = JSON.stringify(customMaterials);
-  const glassMode = viewMode === 'presentation' && !walkMode ? 'transmission' : 'transparent';
+  const glassMode = viewMode === 'presentation' && !firstPerson ? 'transmission' : 'transparent';
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const materials = useMemo(() => new MaterialManager(style, customMaterials, glassMode), [style, customKey, glassMode]);
   useEffect(() => () => materials.dispose(), [materials]);
@@ -127,9 +130,9 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
       {/* Render on demand (camera moves, edits, resizes) so an idle model costs no GPU time;
           the first-person view animates continuously. */}
       <Canvas
-        frameloop={walkMode ? 'always' : 'demand'}
+        frameloop={firstPerson ? 'always' : 'demand'}
         shadows={{ type: THREE.PCFSoftShadowMap }}
-        dpr={dpr}
+        dpr={droneMode ? Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1) : dpr}
         gl={{ antialias: true, preserveDrawingBuffer: true, powerPreference: 'high-performance', logarithmicDepthBuffer: false }}
         onPointerMissed={(e) => {
           if (!interactive) return;
@@ -145,10 +148,10 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
         <CameraRig />
         <Lighting groundMaterial={materials.get('grass')} />
         <Suspense fallback={null}>
-          <SceneObjects materials={materials} interactive={interactive && !walkMode} />
+          <SceneObjects materials={materials} interactive={interactive && !firstPerson} />
         </Suspense>
-        {interactive && !walkMode ? <GroundCatcher /> : null}
-        {!walkMode ? (
+        {interactive && !firstPerson ? <GroundCatcher /> : null}
+        {!firstPerson ? (
           <>
             <SelectionOutlines />
             <SelectionLabels />
@@ -173,7 +176,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
           />
         ) : null}
         {viewMode === 'modeling' ? <axesHelper args={[1.2]} position={[0, 0.003, 0]} /> : null}
-        {viewMode !== 'presentation' && !walkMode ? (
+        {viewMode !== 'presentation' && !firstPerson ? (
           <GizmoHelper alignment="bottom-right" margin={[72, 92]}>
             <GizmoViewport axisColors={['#e06c75', '#98c379', '#61afef']} labelColor="#0f0f0d" />
           </GizmoHelper>

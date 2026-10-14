@@ -47,7 +47,7 @@ export const PLANS: Plan[] = [
       '40 AI requests per month',
       'Unlimited edits with the built-in interpreter',
       'Text, voice and drawing-to-3D',
-      'Realistic renders and first-person walk-through',
+      'Realistic renders, first-person walk-through and drone videos',
       'Version history and read-only share links',
       'GLB, OBJ and STL export',
     ],

@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Copy, Eye, EyeOff, Lock, Trash2, Unlock } from 'lucide-react';
+import { findClashes, resolveFurnitureClashes, type Clash } from '@/core/scene/clashes';
 import { useEditor } from '../store/editor';
 import { Badge, Button, IconButton } from '../ui/primitives';
 import { MaterialPicker } from './MaterialPicker';
@@ -93,6 +94,17 @@ function TextInput({ value, onCommit }: { value: string; onCommit: (v: string) =
   );
 }
 
+/** Clashes involving one element (cached per scene revision). */
+const clashCache = new WeakMap<object, Clash[]>();
+function clashesFor(scene: import('@/core/schema/scene').Scene, id: string): Clash[] {
+  let all = clashCache.get(scene);
+  if (!all) {
+    all = findClashes(scene);
+    clashCache.set(scene, all);
+  }
+  return all.filter((c) => c.elementId === id || c.otherId === id);
+}
+
 export function Inspector() {
   const selection = useEditor((s) => s.selection);
   const scene = useEditor((s) => s.scene);
@@ -157,8 +169,31 @@ export function Inspector() {
     else if (r.refs.$dup) useEditor.getState().select(r.refs.$dup);
   };
 
+  const clashes = clashesFor(scene, el.id);
+  const fixPlacement = () => {
+    const r = resolveFurnitureClashes(scene, { only: [el.id], keep: true });
+    const moved = r.scene.elements.find((e) => e.id === el.id);
+    if (!r.moved.length || !moved || moved.type !== 'furniture') {
+      useEditor.getState().notify('No free spot nearby — try moving it to another part of the room.', 'warn');
+      return;
+    }
+    run([{ op: 'modify', id: el.id, set: { position: moved.position, rotation: moved.rotation } }], `Move ${el.name} to a free spot`);
+  };
+
   return (
     <div className="space-y-3 px-3 py-3" data-testid="inspector">
+      {clashes.length ? (
+        <div className="rounded-lg border border-warn/30 bg-warn/[0.07] px-2.5 py-2 text-[11.5px] text-warn" data-testid="clash-notice">
+          {clashes.slice(0, 3).map((c) => (
+            <div key={c.message}>{c.message}</div>
+          ))}
+          {el.type === 'furniture' && !readOnly ? (
+            <button className="mt-1.5 rounded border border-warn/40 px-2 py-0.5 text-[11px] hover:bg-warn/10" onClick={fixPlacement} data-testid="fix-placement">
+              Move to the nearest free spot
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex items-start gap-2">
         <div className="mt-0.5 rounded-md bg-accent-soft p-1.5 text-accent">
           <ElementIcon type={el.type} className="h-4 w-4" />

@@ -9,6 +9,24 @@ import { HOSTED_TYPES } from '@/core/schema/elements';
 import { findElement } from '@/core/scene/query';
 import { uid } from '../lib/utils';
 
+export interface VideoSettings {
+  seconds: number;
+  width: number;
+  height: number;
+  fps: number;
+}
+export interface VideoState {
+  status: 'idle' | 'recording' | 'done' | 'error';
+  progress: number;
+  settings?: VideoSettings;
+  url?: string;
+  filename?: string;
+  mime?: string;
+  error?: string;
+  /** View mode to return to after recording. */
+  returnViewMode?: 'modeling' | 'realistic' | 'presentation';
+}
+
 export type ViewMode = 'modeling' | 'realistic' | 'presentation';
 export type Tool = 'select' | 'move' | 'rotate' | 'scale' | 'measure';
 export type CameraKind = 'perspective' | 'orthographic';
@@ -63,6 +81,9 @@ export interface EditorState {
   walkInfo: { level: string; fly: boolean };
   /** Diagnostics shown in the walk HUD (frames per second, GPU). */
   walkStats: { fps: number; gpu: string };
+  /** Drone video recording: the camera follows a generated flight while frames are encoded. */
+  droneMode: boolean;
+  video: VideoState;
   showGrid: boolean;
   showLabels: boolean;
   snap: boolean;
@@ -128,6 +149,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   walkLocked: false,
   walkInfo: { level: '', fly: false },
   walkStats: { fps: 0, gpu: '' },
+  droneMode: false,
+  video: { status: 'idle', progress: 0 },
   showGrid: true,
   showLabels: true,
   snap: true,

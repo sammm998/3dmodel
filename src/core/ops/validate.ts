@@ -2,6 +2,7 @@ import { Element } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import { materialExists } from '../materials/library';
 import { findElement, materialSlots, wallFrame } from '../scene/query';
+import { findClashes } from '../scene/clashes';
 
 export interface SceneIssue {
   severity: 'error' | 'warning';
@@ -101,5 +102,8 @@ export function validateScene(scene: Scene): SceneIssue[] {
       }
     }
   }
+  // Planning clashes (furniture in doorways, on stairs, in walls, overlapping) are warnings:
+  // edits are allowed, but the user is told what now collides.
+  for (const c of findClashes(scene)) issues.push({ severity: 'warning', elementId: c.elementId, message: c.message });
   return issues;
 }

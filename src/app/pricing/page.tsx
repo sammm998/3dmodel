@@ -18,7 +18,7 @@ const ROWS: { label: string; cells: [Cell, Cell, Cell] }[] = [
   { label: 'Built-in interpreter edits', cells: ['Unlimited', 'Unlimited', 'Unlimited'] },
   { label: 'Text, voice and drawing-to-3D', cells: [true, true, true] },
   { label: 'Click-to-prompt editing on real elements', cells: [true, true, true] },
-  { label: 'Realistic renders and first-person walk-through', cells: [true, true, true] },
+  { label: 'Realistic renders, walk-through and drone videos', cells: [true, true, true] },
   { label: 'Version history and restore', cells: [true, true, true] },
   { label: 'Read-only share links', cells: [true, true, true] },
   { label: 'GLB, OBJ and STL export', cells: [true, true, true] },

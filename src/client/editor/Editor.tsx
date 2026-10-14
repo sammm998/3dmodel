@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { BrandMark } from '../site/Brand';
-import { ArrowLeft, Camera, Footprints, ChevronDown, ChevronUp, CloudOff, Download, Eye, FileUp, Loader2, Plus, Share2, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Camera, Clapperboard, Footprints, ChevronDown, ChevronUp, CloudOff, Download, Eye, FileUp, Loader2, Plus, Share2, Sparkles, X } from 'lucide-react';
 import * as THREE from 'three';
 import { useEditor, type ViewMode } from '../store/editor';
 import { Viewport } from '../three/Viewport';
@@ -13,6 +13,7 @@ import { BottomToolbar, ViewControls } from './Toolbar';
 import { ExportDialog, ShareDialog } from './Dialogs';
 import { DrawingImportDialog } from './DrawingImport';
 import { WalkHud } from './WalkHud';
+import { DroneHud, VideoDialog, cancelDroneVideo } from './DroneVideo';
 import { startWalk, stopWalk } from './walk';
 import { Button, IconButton, TooltipProvider } from '../ui/primitives';
 import { api } from '../lib/api';
@@ -63,7 +64,7 @@ function SaveStatus() {
   return <span className="text-[11px] text-ink-400" data-testid="save-status">{lastSavedAt ? `Saved ${timeAgo(new Date(lastSavedAt).toISOString())}` : 'All changes saved'}</span>;
 }
 
-function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => void }) {
+function TopBar({ onShare, onExport, onVideo }: { onShare: () => void; onExport: () => void; onVideo: () => void }) {
   const name = useEditor((s) => s.projectName);
   const readOnly = useEditor((s) => s.readOnly);
   const [editing, setEditing] = useState(false);
@@ -112,6 +113,9 @@ function TopBar({ onShare, onExport }: { onShare: () => void; onExport: () => vo
             </Button>
             <Button size="sm" variant="ghost" onClick={startWalk} data-testid="walk-button">
               <Footprints className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Walk inside</span>
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onVideo} data-testid="video-button">
+              <Clapperboard className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Drone video</span>
             </Button>
             <Button size="sm" variant="ghost" onClick={onShare}>
               <Share2 className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Share</span>
@@ -289,6 +293,11 @@ function useShortcuts(save: (manual?: boolean) => void, openExport: () => void) 
         if (e.key === 'Escape' && !st.walkLocked) stopWalk();
         return;
       }
+      // Recording a drone video: only Esc (cancel) is handled.
+      if (st.droneMode) {
+        if (e.key === 'Escape') cancelDroneVideo();
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -348,6 +357,13 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   const viewMode = useEditor((s) => s.viewMode);
   const readOnly = useEditor((s) => s.readOnly);
   const walkMode = useEditor((s) => s.walkMode);
+  const droneMode = useEditor((s) => s.droneMode);
+  const videoStatus = useEditor((s) => s.video.status);
+  const [videoOpen, setVideoOpen] = useState(false);
+  // Show the result (or the error) as soon as a recording ends.
+  useEffect(() => {
+    if (videoStatus === 'done' || videoStatus === 'error') setVideoOpen(true);
+  }, [videoStatus]);
   const selectionCount = useEditor((s) => s.selection.length);
   const save = useAutosave();
   const openExport = useCallback(() => setExportOpen(true), []);
@@ -409,11 +425,11 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   }
 
   const presentation = viewMode === 'presentation';
-  const immersive = presentation || walkMode;
+  const immersive = presentation || walkMode || droneMode;
   return (
     <TooltipProvider>
       <div className="flex h-screen flex-col overflow-hidden bg-ink-900">
-        {!immersive ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} /> : null}
+        {!immersive ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} onVideo={() => setVideoOpen(true)} /> : null}
         <div className="relative flex min-h-0 flex-1">
           {!immersive ? (
             <aside className="relative z-10 flex w-[264px] shrink-0 flex-col border-r border-white/[0.06] bg-ink-850">
@@ -430,15 +446,16 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
             )}
             <div className="pointer-events-none absolute inset-0">
               <Notice />
-              {!walkMode ? (
+              {!walkMode && !droneMode ? (
                 <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
                   <ViewControls />
                 </div>
               ) : null}
               {walkMode ? <WalkHud /> : null}
+              {droneMode ? <DroneHud /> : null}
               {!loading ? <EmptyState /> : null}
               <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 justify-center">
-                {walkMode ? null : presentation ? <PresentationBar /> : readOnly ? null : <BottomToolbar onExport={() => setExportOpen(true)} onSave={() => save(true)} />}
+                {walkMode || droneMode ? null : presentation ? <PresentationBar /> : readOnly ? null : <BottomToolbar onExport={() => setExportOpen(true)} onSave={() => save(true)} />}
               </div>
             </div>
           </main>
@@ -462,6 +479,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
           ) : null}
         </div>
         <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
+        <VideoDialog open={videoOpen} onOpenChange={setVideoOpen} />
         <ShareDialog open={shareOpen} onOpenChange={setShareOpen} token={token} setToken={setToken} />
         {!readOnly ? <DrawingImportDialog /> : null}
       </div>

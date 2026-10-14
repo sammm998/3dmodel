@@ -7,6 +7,7 @@
  *   windows, stairs, roofs, furniture and site extras.
  */
 import type { Element, Vec2, WallElement } from '../schema/elements';
+import { resolveFurnitureClashes } from '../scene/clashes';
 import { emptyScene, type Level, type Scene } from '../schema/scene';
 import { buildGrid, extractEdges, mergeCollinear, offsetEdges, outlineLoops, type EdgeSegment, type LabeledRect } from '../geometry/rectilinear';
 import { createElement } from '../scene/factory';
@@ -19,6 +20,8 @@ export interface GenerateOptions {
   scene?: Scene;
   /** Plan offset applied after centring the program on the origin. */
   origin?: Vec2;
+  /** Move/remove furniture that blocks doors, stairs or glazing (default true). */
+  resolveClashes?: boolean;
 }
 
 export interface GenerateResult {
@@ -740,6 +743,15 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
         material: 'grass',
       }),
     );
+  }
+
+  // Final planning pass: no furniture in door clearances, in front of glazing, on stairs,
+  // in walls or in other furniture. Pieces are moved to the nearest free spot or left out.
+  const resolved = opts.resolveClashes === false ? { scene, moved: [], removed: [] } : resolveFurnitureClashes(scene);
+  if (resolved.removed.length || resolved.moved.length) {
+    scene.elements = resolved.scene.elements;
+    const gone = new Set(resolved.removed);
+    for (let i = created.length - 1; i >= 0; i--) if (gone.has(created[i])) created.splice(i, 1);
   }
 
   const counts = countTypes(scene.elements.filter((e) => created.includes(e.id)));

@@ -7,7 +7,8 @@
  * about what it does not understand: unknown requests return no operations
  * and a clarifying message instead of guessing.
  */
-import type { Element, ElementType, FurnitureKind, Vec2 } from '../schema/elements';
+import { findClashes, resolveFurnitureClashes } from '../scene/clashes';
+import type { Element, ElementType, FurnitureElement, FurnitureKind, Vec2 } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import type { OperationInput } from '../ops/operations';
 import type { BuildingProgramInput } from '../generator/program';
@@ -111,6 +112,26 @@ export function interpret(text: string, ctx: InterpretContext): InterpretResult 
       ),
       operations: [op],
       needsConfirmation: ctx.scene.elements.length > 0 && op.mode === 'replace',
+    };
+  }
+
+  // ---- planning: re-place furniture that blocks doors, stairs, glazing or each other --------
+  if (/\b(fix|resolve|clear|tidy|arrange|sort out)\b.*\b(clash|clashes|collision|collisions|furniture|placement|layout)\b|\b(ordna|fixa|lös|städa)\b.*\b(möbl|krock|kollision|placering)/.test(lower)) {
+    const only = ctx.selectedIds.length ? ctx.selectedIds : undefined;
+    const r = resolveFurnitureClashes(ctx.scene, { only, keep: true });
+    const ops: OperationInput[] = r.moved.map((id) => {
+      const f = r.scene.elements.find((e) => e.id === id) as FurnitureElement;
+      return { op: 'modify', id, set: { position: f.position, rotation: f.rotation } };
+    });
+    const left = findClashes(r.scene).length;
+    return {
+      understood: true,
+      language: lang,
+      message: ops.length
+        ? t(lang, `Moved ${ops.length} piece${ops.length > 1 ? 's' : ''} of furniture to the nearest free spot${left ? ` (${left} clash${left > 1 ? 'es' : ''} could not be solved by moving)` : ''}.`, `Flyttade ${ops.length} möbler till närmaste fria plats${left ? ` (${left} krockar gick inte att lösa genom att flytta)` : ''}.`)
+        : t(lang, left ? `${left} clash${left > 1 ? 'es' : ''} remain that moving furniture cannot solve.` : 'Nothing collides — no furniture blocks a door, stair or window.', left ? `${left} krockar kvar som inte går att lösa genom att flytta möbler.` : 'Inget krockar — inga möbler blockerar dörrar, trappor eller fönster.'),
+      operations: ops,
+      needsConfirmation: false,
     };
   }
 

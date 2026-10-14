@@ -31,6 +31,7 @@
     "clsx": "^2.1.1",
     "dxf-parser": "^1.1.2",
     "lucide-react": "^1.55.0",
+    "mp4-muxer": "^5.2.2",
     "nanoid": "^6.0.2",
     "next": "^15.5.27",
     "pdfjs-dist": "^4.10.38",
