@@ -11,8 +11,9 @@ import { resolveFurnitureClashes } from '../scene/clashes';
 import { emptyScene, type Level, type Scene } from '../schema/scene';
 import { buildGrid, extractEdges, mergeCollinear, offsetEdges, outlineLoops, type EdgeSegment, type LabeledRect } from '../geometry/rectilinear';
 import { createElement } from '../scene/factory';
+import { findElement, pointAlongWall, wallFrame } from '../scene/query';
 import { BuildingProgram, type BuildingProgramInput, type ProgramRoom, type RoomFunction } from './program';
-import { furnishRoom } from './furnish';
+import { furnishRoom, type RoomOpening } from './furnish';
 import { dist2, round } from '../geometry/math2d';
 
 export interface GenerateOptions {
@@ -161,6 +162,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
     const ra = roomLabel.get(a);
     const rb = roomLabel.get(b);
     if (ra && rb && OPEN_PLAN.includes(ra.function) && OPEN_PLAN.includes(rb.function)) return true;
+    // Hall and corridor are one circulation space.
+    if (ra && rb && ra.function === 'hall' && rb.function === 'hall') return true;
     return a === b;
   };
 
@@ -335,11 +338,11 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
           [stair.x0, stair.z1],
           [stair.x1, stair.z1],
         ];
-        if (Math.min(...corners.map(([x, z]) => perp(x, z))) < 2) blocked.push([Math.min(...corners.map(([x, z]) => proj(x, z))) - 0.25, Math.max(...corners.map(([x, z]) => proj(x, z))) + 0.25]);
+        if (Math.min(...corners.map(([x, z]) => perp(x, z))) < 2) blocked.push([Math.min(...corners.map(([x, z]) => proj(x, z))) - 0.15, Math.max(...corners.map(([x, z]) => proj(x, z))) + 0.15]);
       }
       for (const e of scene.elements) {
         if (e.type !== 'wall' || e.id === wall.id || e.exterior || (e.levelId ?? levels[0].id) !== wall.levelId) continue;
-        for (const q of [e.start, e.end]) if (perp(q.x, q.z) < 0.3) blocked.push([proj(q.x, q.z) - e.thickness / 2 - 0.3, proj(q.x, q.z) + e.thickness / 2 + 0.3]);
+        for (const q of [e.start, e.end]) if (perp(q.x, q.z) < 0.3) blocked.push([proj(q.x, q.z) - e.thickness / 2 - 0.15, proj(q.x, q.z) + e.thickness / 2 + 0.15]);
       }
       const free = (c: number) => c > doorW / 2 + 0.2 && c < L - doorW / 2 - 0.2 && blocked.every(([b0, b1]) => c + doorW / 2 <= b0 || c - doorW / 2 >= b1);
       if (!free(offset)) {
@@ -454,23 +457,32 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       // Open-plan rooms are already connected.
       const groupOf = (lbl: string) => {
         const r = roomLabel.get(lbl);
-        return r && OPEN_PLAN.includes(r.function) ? 'open' : lbl;
+        return r && OPEN_PLAN.includes(r.function) ? 'open' : r?.function === 'hall' ? 'circulation' : lbl;
       };
       const start = levelRooms.find((l) => roomLabel.get(l)?.function === 'hall') ?? levelRooms[0];
-      const visited = new Set<string>([groupOf(start)]);
-      const queue = [start];
-      for (const l of levelRooms) if (groupOf(l) === groupOf(start)) queue.push(l);
-      while (queue.length) {
-        const cur = queue.shift()!;
-        for (const { other, wall } of adj.get(cur) ?? []) {
-          const g = groupOf(other);
-          if (visited.has(g)) continue;
-          visited.add(g);
+      // Shortest-path tree from the hall where walking *through* a bedroom, bathroom or
+      // garage is expensive: private rooms get their own door from a hall or living
+      // space whenever the plan allows, instead of becoming walk-through rooms.
+      const PRIVATE: RoomFunction[] = ['bedroom', 'bathroom', 'garage', 'storage'];
+      const passCost = (lbl: string) => (PRIVATE.includes(roomLabel.get(lbl)?.function ?? 'other') ? 12 : 1);
+      const dist = new Map<string, number>();
+      const visited = new Set<string>();
+      const frontier: { lbl: string; d: number; from?: string; wall?: WallElement }[] = [];
+      for (const l of levelRooms) if (groupOf(l) === groupOf(start)) frontier.push({ lbl: l, d: 0 });
+      while (frontier.length) {
+        frontier.sort((a, b) => a.d - b.d);
+        const { lbl: cur, d, from, wall } = frontier.shift()!;
+        if (visited.has(cur)) continue;
+        const g = groupOf(cur);
+        const groupReached = [...visited].some((v) => groupOf(v) === g);
+        visited.add(cur);
+        dist.set(cur, d);
+        if (from && wall && !groupReached) {
           const len = wallLen(wall);
           const w = 0.9;
           const offset = len < 2.4 ? len / 2 : 0.25 + w / 2 + 0.2;
           if (!overlaps(occupied.get(wall.id), offset - w / 2, offset + w / 2)) {
-            const rOther = roomLabel.get(other);
+            const rOther = roomLabel.get(cur);
             add(
               createElement(scene, {
                 type: 'door',
@@ -479,7 +491,7 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
                 offset: round(offset),
                 width: w,
                 height: Math.min(2.1, H - 0.3),
-                doorType: rOther?.function === 'bathroom' ? 'hinged' : 'hinged',
+                doorType: 'hinged',
                 leafMaterial: 'paint_white',
                 frameMaterial: 'paint_white',
                 frameDepth: P.interiorWallThickness + 0.02,
@@ -487,8 +499,16 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
             );
             occupy(wall.id, offset - w / 2, offset + w / 2);
           }
-          queue.push(other);
-          for (const l of levelRooms) if (groupOf(l) === g && l !== other) queue.push(l);
+          // The rest of an open-plan group is reached with it.
+          for (const l of levelRooms) if (l !== cur && groupOf(l) === g && !visited.has(l)) frontier.push({ lbl: l, d });
+        }
+        for (const { other, wall: wl } of adj.get(cur) ?? []) {
+          if (visited.has(other)) continue;
+          if (groupOf(other) === g) {
+            frontier.push({ lbl: other, d });
+            continue;
+          }
+          frontier.push({ lbl: other, d: d + passCost(cur), from: cur, wall: wl });
         }
       }
     }
@@ -499,6 +519,19 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
   const style = W.style;
   if (W.density !== 'none' || W.count) {
     const allExt = exteriorWallsByLevel.flatMap((lv, L) => lv.map((x) => ({ ...x, level: L })));
+    // A window never straddles an interior wall meeting the façade (it would span two rooms
+    // and leave the partition ending in glass): reserve each junction plus a reveal.
+    for (const { wall, level } of allExt) {
+      const L = wallLen(wall);
+      const dir = { x: (wall.end.x - wall.start.x) / L, z: (wall.end.z - wall.start.z) / L };
+      for (const { wall: iw } of interiorWallsByLevel[level] ?? []) {
+        for (const q of [iw.start, iw.end]) {
+          const t = (q.x - wall.start.x) * dir.x + (q.z - wall.start.z) * dir.z;
+          const perp = Math.abs((q.x - wall.start.x) * dir.z - (q.z - wall.start.z) * dir.x);
+          if (perp < wall.thickness / 2 + 0.05 && t > 0 && t < L) occupy(wall.id, t - iw.thickness / 2 - 0.15, t + iw.thickness / 2 + 0.15);
+        }
+      }
+    }
     const spec = (L: number) => {
       const h = levels[L].height;
       switch (style) {
@@ -640,7 +673,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       const lvl = levels[r.level];
       if (!lvl) continue;
       const stair = stairPlacements.find((s) => s.level === r.level)?.rect ?? stairRects[r.level] ?? null;
-      for (const f of furnishRoom(r, { requested: P.furniture, avoid: stair })) {
+      const openings = roomOpenings(scene, lvl.id, r);
+      for (const f of furnishRoom(r, { requested: P.furniture, avoid: stair, openings, buildingKind: P.kind })) {
         add(createElement(scene, { ...f, type: 'furniture', levelId: lvl.id }));
       }
     }
@@ -761,6 +795,34 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
   return { scene, createdIds: created, summary };
 }
 
+/** Doors and windows in the sides of a rectangular room, for furnishing around them. */
+function roomOpenings(scene: Scene, levelId: string, r: ProgramRoom): RoomOpening[] {
+  const out: RoomOpening[] = [];
+  const x0 = r.x;
+  const z0 = r.z;
+  const x1 = r.x + r.width;
+  const z1 = r.z + r.depth;
+  for (const e of scene.elements) {
+    if ((e.type !== 'door' && e.type !== 'window') || e.levelId !== levelId) continue;
+    const host = findElement(scene, e.hostId);
+    if (!host || host.type !== 'wall') continue;
+    const f = wallFrame(host);
+    const p = pointAlongWall(host, e.offset);
+    const tol = host.thickness / 2 + 0.05;
+    const half = e.width / 2;
+    if (Math.abs(f.dir.z) < 0.1) {
+      if (p.x + half < x0 || p.x - half > x1) continue;
+      if (Math.abs(p.z - z0) < tol) out.push({ kind: e.type, side: 'n', a: p.x - half, b: p.x + half });
+      else if (Math.abs(p.z - z1) < tol) out.push({ kind: e.type, side: 's', a: p.x - half, b: p.x + half });
+    } else if (Math.abs(f.dir.x) < 0.1) {
+      if (p.z + half < z0 || p.z - half > z1) continue;
+      if (Math.abs(p.x - x0) < tol) out.push({ kind: e.type, side: 'w', a: p.z - half, b: p.z + half });
+      else if (Math.abs(p.x - x1) < tol) out.push({ kind: e.type, side: 'e', a: p.z - half, b: p.z + half });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------
 function autoLayout(
   P: BuildingProgram,
@@ -833,7 +895,8 @@ function autoLayout(
   for (let L = 0; L < levelsOfMain; L++) {
     let area: Rect = { ...main.rect };
     if (needHall) {
-      const hallW = Math.min(2.4, main.width * 0.3);
+      // A stair hall needs room for the flight beside the passage; otherwise a corridor will do.
+      const hallW = wantStairs ? Math.min(2.7, main.width * 0.3) : Math.min(1.6, Math.max(1.3, main.width * 0.2));
       push({ name: L === 0 ? 'Entrance hall' : `Landing ${L}`, function: 'hall', level: L, x: area.x0, z: area.z0, width: round(hallW), depth: main.depth });
       area = { ...area, x0: round(area.x0 + hallW) };
     }
@@ -847,14 +910,19 @@ function autoLayout(
       if (fn === 'bedroom') name = ++bedroomNo === 1 ? 'Master bedroom' : `Bedroom ${bedroomNo}`;
       if (fn === 'bathroom') name = ++bathNo === 1 ? 'Bathroom' : `Bathroom ${bathNo}`;
       if (fn === 'office') name = P.kind === 'office' ? (officeNo++ % 2 === 0 ? 'Open office' : 'Meeting room') : 'Office';
-      const weight = fn === 'bedroom' && name === 'Master bedroom' ? 16 : AREA_WEIGHT[fn];
-      return { fn, name, weight };
+      const master = fn === 'bedroom' && name === 'Master bedroom';
+      const weight = master ? 16 : AREA_WEIGHT[fn];
+      return { fn, name, weight, minSide: master ? 3.2 : MIN_SIDE[fn] };
     });
     if (P.kind === 'office') {
       items[0].weight = 60;
       items[1].weight = 18;
     }
-    for (const { item, rect } of sliceAndDice(items, area)) {
+    // With several bedrooms/bathrooms a corridor off the hall gives each its own door;
+    // otherwise rooms are split directly.
+    const banded = needHall && P.kind !== 'office' && items.filter((i) => PRIVATE_FNS.includes(i.fn)).length >= 2 ? corridorLayout(items, area) : null;
+    if (banded) push({ name: L === 0 ? 'Corridor' : `Corridor ${L}`, function: 'hall', level: L, x: banded.corridor.x0, z: banded.corridor.z0, width: round(banded.corridor.x1 - banded.corridor.x0), depth: round(banded.corridor.z1 - banded.corridor.z0) });
+    for (const { item, rect } of banded?.parts ?? sliceAndDice(items, area)) {
       push({ name: item.name, function: item.fn, level: L, x: round(rect.x0), z: round(rect.z0), width: round(rect.x1 - rect.x0), depth: round(rect.z1 - rect.z0) });
     }
   }
@@ -873,38 +941,159 @@ function guessSingleRoomFunction(P: BuildingProgram): RoomFunction {
   return P.kind === 'room' ? 'other' : 'living';
 }
 
-function sliceAndDice<T extends { weight: number }>(items: T[], rect: Rect): { item: T; rect: Rect }[] {
-  if (items.length === 1) return [{ item: items[0], rect }];
-  const total = items.reduce((s, i) => s + i.weight, 0);
-  let acc = 0;
-  let split = 1;
-  let bestDiff = Infinity;
-  for (let i = 1; i < items.length; i++) {
-    acc += items[i - 1].weight;
-    const diff = Math.abs(acc - total / 2);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      split = i;
-    }
+const PRIVATE_FNS: RoomFunction[] = ['bedroom', 'bathroom', 'storage'];
+const CORRIDOR_W = 1.2;
+
+/**
+ * Two bands of rooms either side of a corridor running from the hall: every room
+ * opens onto circulation. Living spaces (open plan, so one wide space) take the
+ * front band with whatever private rooms fit beside them; the rest go to the back.
+ * Returns null when the rooms do not fit this way.
+ */
+function corridorLayout<T extends SliceItem & { fn: RoomFunction }>(items: T[], area: Rect): { parts: { item: T; rect: Rect }[]; corridor: Rect } | null {
+  const W = area.x1 - area.x0;
+  const D = area.z1 - area.z0;
+  if (D < 2 * 2.9 + CORRIDOR_W || W < 4.5) return null;
+  const pub = items.filter((i) => OPEN_PLAN.includes(i.fn));
+  const priv = items.filter((i) => !OPEN_PLAN.includes(i.fn));
+  const need = (band: T[]) => {
+    const p = band.filter((i) => OPEN_PLAN.includes(i.fn));
+    return band.filter((i) => !OPEN_PLAN.includes(i.fn)).reduce((a, i) => a + i.minSide, 0) + (p.length ? Math.max(3.4, ...p.map((i) => i.minSide)) : 0);
+  };
+  const back: T[] = [];
+  const front: T[] = [...pub];
+  for (const it of priv) {
+    if (need([...back, it]) <= W) back.push(it);
+    else if (need([...front, it]) <= W) front.push(it);
+    else return null;
   }
-  const a = items.slice(0, split);
-  const b = items.slice(split);
-  const fa = a.reduce((s, i) => s + i.weight, 0) / total;
+  if (!front.length) {
+    // Upper floors: balance the bands.
+    while (back.length > front.length + 1) front.unshift(back.pop()!);
+  }
+  if (!back.length || !front.length) return null;
+  const sum = (xs: T[]) => xs.reduce((a, i) => a + i.weight, 0);
+  const avail = D - CORRIDOR_W;
+  const minBack = Math.max(...back.map((i) => i.minSide), 2.9);
+  const minFront = Math.max(...front.map((i) => (OPEN_PLAN.includes(i.fn) ? 3.4 : i.minSide)), 2.9);
+  if (minBack + minFront > avail) return null;
+  const dBack = round(Math.min(avail - minFront, Math.max(minBack, (avail * sum(back)) / (sum(back) + sum(front)))), 2);
+  // Split a band along x: everyone gets their minimum, the rest goes by weight.
+  const band = (list: T[], z0: number, z1: number) => {
+    const mins = list.map((i) => (OPEN_PLAN.includes(i.fn) && list.filter((o) => OPEN_PLAN.includes(o.fn)).length > 1 ? 0 : i.minSide));
+    // An open-plan group shares one minimum.
+    const pubIdx = list.map((i, k) => (OPEN_PLAN.includes(i.fn) ? k : -1)).filter((k) => k >= 0);
+    if (pubIdx.length > 1) for (const k of pubIdx) mins[k] = 3.4 / pubIdx.length;
+    const spare = W - mins.reduce((a, b) => a + b, 0);
+    const wsum = sum(list);
+    let x = area.x0;
+    return list.map((item, k) => {
+      const w = k === list.length - 1 ? area.x1 - x : round(mins[k] + (spare * item.weight) / wsum, 2);
+      const rect = { x0: round(x), z0: z0, x1: round(x + w), z1: z1 };
+      x += w;
+      return { item, rect };
+    });
+  };
+  const zc0 = round(area.z0 + dBack);
+  const zc1 = round(zc0 + CORRIDOR_W);
+  return {
+    parts: [...band(front, zc1, area.z1), ...band(back, area.z0, zc0)],
+    corridor: { x0: area.x0, z0: zc0, x1: area.x1, z1: zc1 },
+  };
+}
+
+/** Smallest sensible short side (wall centre to wall centre) per room function, in metres. */
+const MIN_SIDE: Record<RoomFunction, number> = {
+  living: 3.4,
+  kitchen: 2.4,
+  dining: 2.8,
+  bedroom: 2.9,
+  bathroom: 1.8,
+  office: 2.6,
+  hall: 1.2,
+  storage: 1.2,
+  garage: 2.8,
+  terrace: 2,
+  other: 2,
+};
+
+interface SliceItem {
+  weight: number;
+  minSide: number;
+}
+
+/** How badly a rectangle suits a room: too narrow weighs heavily, very elongated a little. */
+function leafPenalty(item: SliceItem, r: Rect) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  const s = Math.min(w, d);
+  const l = Math.max(w, d);
+  return Math.max(0, item.minSide - s) * 10 + Math.max(0, l / Math.max(s, 0.1) - 2.4) * 1.5;
+}
+
+/** Quick estimate for a group that will be split further. */
+function groupPenalty(items: SliceItem[], r: Rect) {
+  if (items.length === 1) return leafPenalty(items[0], r);
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  const need = items.reduce((a, i) => a + i.minSide * i.minSide * 1.15, 0);
+  const widest = Math.max(...items.map((i) => i.minSide));
+  return Math.max(0, widest - Math.min(w, d)) * 10 + Math.max(0, need - w * d) * 0.8;
+}
+
+/**
+ * Splits a rectangle among rooms (in order) by recursive bisection. Each split tries
+ * every division point, both orientations and a few area shifts; the most promising
+ * few are followed through to the leaves and the layout whose rooms all get a usable
+ * shape (minimum short side, not too elongated) closest to their area share wins.
+ */
+function sliceAndDice<T extends SliceItem>(items: T[], rect: Rect): { item: T; rect: Rect }[] {
+  return slice(items, rect).parts;
+}
+
+function slice<T extends SliceItem>(items: T[], rect: Rect): { parts: { item: T; rect: Rect }[]; cost: number } {
+  if (items.length === 1) return { parts: [{ item: items[0], rect }], cost: leafPenalty(items[0], rect) };
+  const sum = (xs: T[]) => xs.reduce((s, i) => s + i.weight, 0);
+  const total = sum(items);
   const w = rect.x1 - rect.x0;
   const d = rect.z1 - rect.z0;
-  let ra: Rect;
-  let rb: Rect;
-  if (w >= d) {
-    const xm = round(rect.x0 + w * fa, 2);
-    ra = { ...rect, x1: xm };
-    rb = { ...rect, x0: xm };
-  } else {
-    // Larger (first) group goes to the front (south, +z).
-    const zm = round(rect.z1 - d * fa, 2);
-    ra = { ...rect, z0: zm };
-    rb = { ...rect, z1: zm };
+  const options: { est: number; shift: number; a: T[]; b: T[]; ra: Rect; rb: Rect }[] = [];
+  for (let i = 1; i < items.length; i++) {
+    const a = items.slice(0, i);
+    const b = items.slice(i);
+    const fa0 = sum(a) / total;
+    for (const alongX of [true, false]) {
+      for (const k of [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.35]) {
+        const fa = Math.min(0.92, Math.max(0.08, fa0 * k));
+        let ra: Rect;
+        let rb: Rect;
+        if (alongX) {
+          const xm = round(rect.x0 + w * fa, 2);
+          ra = { ...rect, x1: xm };
+          rb = { ...rect, x0: xm };
+        } else {
+          // Larger (first) group goes to the front (south, +z).
+          const zm = round(rect.z1 - d * fa, 2);
+          ra = { ...rect, z0: zm };
+          rb = { ...rect, z1: zm };
+        }
+        // Area shift away from the program's proportions, plus a mild preference for
+        // cutting across the long side.
+        const shift = Math.abs(fa - fa0) * 2 + (alongX === w >= d ? 0 : 0.15);
+        options.push({ est: groupPenalty(a, ra) + groupPenalty(b, rb) + shift, shift, a, b, ra, rb });
+      }
+    }
   }
-  return [...sliceAndDice(a, ra), ...sliceAndDice(b, rb)];
+  options.sort((p, q) => p.est - q.est);
+  let best: { parts: { item: T; rect: Rect }[]; cost: number } | null = null;
+  for (const o of options.slice(0, items.length > 4 ? 3 : 4)) {
+    const A = slice(o.a, o.ra);
+    const B = slice(o.b, o.rb);
+    const cost = A.cost + B.cost + o.shift;
+    if (!best || cost < best.cost - 1e-9) best = { parts: [...A.parts, ...B.parts], cost };
+    if (best.cost < 1e-6) break;
+  }
+  return best!;
 }
 
 function freeIntervals(L: number, occ: [number, number][], margin: number): [number, number][] {
