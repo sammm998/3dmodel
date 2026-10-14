@@ -95,9 +95,9 @@ function PhysicalSky({ params, sunDir }: { params: SkyParams; sunDir: THREE.Vect
  * sees (plus a ground hemisphere for bounce light), so glass reflects the real
  * sky and shaded façades pick up blue skylight. No network assets.
  */
-function SkyEnvironment({ sky, gradient, sunDir, intensity }: { sky: SkyParams | null; gradient: { top: string; horizon: string; bottom: string }; sunDir: THREE.Vector3; intensity: number }) {
+function SkyEnvironment({ sky, gradient, sunDir, intensity, ground = '#8a8378' }: { sky: SkyParams | null; gradient: { top: string; horizon: string; bottom: string }; sunDir: THREE.Vector3; intensity: number; ground?: string }) {
   const { gl, scene, invalidate } = useThree();
-  const key = `${JSON.stringify(sky)}|${JSON.stringify(gradient)}|${sunDir.toArray().map((v) => v.toFixed(3)).join(',')}`;
+  const key = `${ground}|${JSON.stringify(sky)}|${JSON.stringify(gradient)}|${sunDir.toArray().map((v) => v.toFixed(3)).join(',')}`;
   useEffect(() => {
     const envScene = new THREE.Scene();
     const skyMat = sky ? physicalSkyMaterial(sky, sunDir) : gradientSkyMaterial(gradient, sunDir);
@@ -105,7 +105,7 @@ function SkyEnvironment({ sky, gradient, sunDir, intensity }: { sky: SkyParams |
     dome.scale.setScalar(50);
     envScene.add(dome);
     // Bounce light from below: a neutral, slightly warm grey (green grass bounce would tint ceilings).
-    const groundMat = new THREE.MeshBasicMaterial({ color: new THREE.Color('#8a8378').multiplyScalar(0.8), side: THREE.DoubleSide });
+    const groundMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ground).multiplyScalar(0.8), side: THREE.DoubleSide });
     const disc = new THREE.Mesh(new THREE.CircleGeometry(40, 48), groundMat);
     disc.rotation.x = -Math.PI / 2;
     disc.position.y = -1;
@@ -240,8 +240,18 @@ export function Lighting({ groundMaterial }: { groundMaterial?: THREE.Material }
             gradient={{ top: preset.top, horizon: preset.horizon, bottom: preset.bottom }}
             sunDir={sunDir}
             intensity={(settings.environment === 'night' ? 0.3 : 1) * (walkMode ? 1.3 : 1)}
+            // Indoors the lower hemisphere is pale floors and walls rather than terrain.
+            ground={walkMode ? '#d8d0c2' : '#8a8378'}
           />
-          <hemisphereLight args={[preset.hemiSky, preset.hemiGround, preset.hemiI * (walkMode ? 1.6 : 1)]} />
+          {/* Indoors the light reaching ceilings bounces off pale floors and walls, not grass:
+              warm the hemisphere's ground colour so ceilings read as white, not taupe. */}
+          <hemisphereLight
+            args={[
+              preset.hemiSky,
+              walkMode && settings.environment !== 'night' ? `#${new THREE.Color(preset.hemiGround).lerp(new THREE.Color('#d2c6b2'), 0.65).getHexString()}` : preset.hemiGround,
+              preset.hemiI * (walkMode ? 1.6 : 1),
+            ]}
+          />
           <directionalLight
             ref={sunRef}
             position={sunPos}
