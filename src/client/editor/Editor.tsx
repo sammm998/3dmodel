@@ -14,6 +14,7 @@ import { ExportDialog, ShareDialog } from './Dialogs';
 import { DrawingImportDialog } from './DrawingImport';
 import { WalkHud } from './WalkHud';
 import { DroneHud, VideoDialog, cancelDroneVideo } from './DroneVideo';
+import { PhotoDialog, PhotoIcon } from './PhotoRender';
 import { startWalk, stopWalk } from './walk';
 import { Button, IconButton, TooltipProvider } from '../ui/primitives';
 import { api } from '../lib/api';
@@ -64,7 +65,7 @@ function SaveStatus() {
   return <span className="text-[11px] text-ink-400" data-testid="save-status">{lastSavedAt ? `Saved ${timeAgo(new Date(lastSavedAt).toISOString())}` : 'All changes saved'}</span>;
 }
 
-function TopBar({ onShare, onExport, onVideo }: { onShare: () => void; onExport: () => void; onVideo: () => void }) {
+function TopBar({ onShare, onExport, onVideo, onPhoto }: { onShare: () => void; onExport: () => void; onVideo: () => void; onPhoto: () => void }) {
   const name = useEditor((s) => s.projectName);
   const readOnly = useEditor((s) => s.readOnly);
   const [editing, setEditing] = useState(false);
@@ -113,6 +114,9 @@ function TopBar({ onShare, onExport, onVideo }: { onShare: () => void; onExport:
             </Button>
             <Button size="sm" variant="ghost" onClick={startWalk} data-testid="walk-button">
               <Footprints className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Walk inside</span>
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onPhoto} data-testid="photo-button">
+              <PhotoIcon className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Photo</span>
             </Button>
             <Button size="sm" variant="ghost" onClick={onVideo} data-testid="video-button">
               <Clapperboard className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Drone video</span>
@@ -361,6 +365,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   const droneMode = useEditor((s) => s.droneMode);
   const videoStatus = useEditor((s) => s.video.status);
   const [videoOpen, setVideoOpen] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
   // Show the result (or the error) as soon as a recording ends.
   useEffect(() => {
     if (videoStatus === 'done' || videoStatus === 'error') setVideoOpen(true);
@@ -430,7 +435,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
   return (
     <TooltipProvider>
       <div className="flex h-screen flex-col overflow-hidden bg-ink-900">
-        {!immersive ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} onVideo={() => setVideoOpen(true)} /> : null}
+        {!immersive ? <TopBar onShare={() => setShareOpen(true)} onExport={() => setExportOpen(true)} onVideo={() => setVideoOpen(true)} onPhoto={() => setPhotoOpen(true)} /> : null}
         <div className="relative flex min-h-0 flex-1">
           {!immersive ? (
             <aside className="relative z-10 flex w-[264px] shrink-0 flex-col border-r border-white/[0.06] bg-ink-850">
@@ -481,6 +486,7 @@ export function Editor({ projectId, shareToken }: { projectId?: string; shareTok
         </div>
         <ExportDialog open={exportOpen} onOpenChange={setExportOpen} />
         <VideoDialog open={videoOpen} onOpenChange={setVideoOpen} />
+        <PhotoDialog open={photoOpen} onOpenChange={setPhotoOpen} />
         <ShareDialog open={shareOpen} onOpenChange={setShareOpen} token={token} setToken={setToken} />
         {!readOnly ? <DrawingImportDialog /> : null}
       </div>

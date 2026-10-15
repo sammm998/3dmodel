@@ -143,4 +143,6 @@ ops → client dry-run (applyOperations) → auto-apply (simple, in scope) | pre
 | Realistic | Procedural PBR textures, sun and hemisphere light, 4k soft shadows, procedural IBL (RoomEnvironment), N8AO, SMAA, gradient sky |
 | Presentation | UI hidden; saved viewpoints with eased transitions; PNG stills at up to 4× pixel ratio |
 
-All modes are real-time rasterisation, which is interactive and approximate. A physically based offline render (path tracing or Blender/Cycles fed by the GLB export) is not implemented yet; see the README limitations.
+| Photo | Progressive GPU path tracing of the current view (`src/client/three/photo.ts`): a clean copy of the building built with the same materials (refractive glass), the realistic sky rendered to an HDR equirect as image-based light, the sun as a directional light; downloadable PNG |
+
+The three interactive modes are real-time rasterisation, which is interactive and approximate; Photo is the physically based still.

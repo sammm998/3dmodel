@@ -6,14 +6,14 @@ import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 
-const ENV_PRESETS = {
+export const ENV_PRESETS = {
   day: { sky: { turbidity: 2.6, rayleigh: 1.3, mie: 0.004, mieG: 0.82, intensity: 0.62 }, ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.45, sun: '#fff1dc', sunI: 4.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
   sunset: { sky: { turbidity: 5, rayleigh: 2.2, mie: 0.006, mieG: 0.86, intensity: 0.7 }, ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.45, sun: '#ffc290', sunI: 3.8, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
   overcast: { sky: null, ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.5, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
   night: { sky: null, ground: '#1a1d1a', top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 1.1, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
 };
 
-function gradientSkyMaterial(c: { top: string; horizon: string; bottom: string }, sunDir: THREE.Vector3): THREE.ShaderMaterial {
+export function gradientSkyMaterial(c: { top: string; horizon: string; bottom: string }, sunDir: THREE.Vector3): THREE.ShaderMaterial {
   const m = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
@@ -55,10 +55,10 @@ function GradientSky({ top, horizon, bottom, sunDir }: { top: string; horizon: s
   );
 }
 
-type SkyParams = { turbidity: number; rayleigh: number; mie: number; mieG: number; intensity: number };
+export type SkyParams = { turbidity: number; rayleigh: number; mie: number; mieG: number; intensity: number };
 
 /** Physically based (Preetham) atmosphere; brightness scaled to sit with the scene's sun light. */
-function physicalSkyMaterial(p: SkyParams, sunDir: THREE.Vector3): THREE.ShaderMaterial {
+export function physicalSkyMaterial(p: SkyParams, sunDir: THREE.Vector3): THREE.ShaderMaterial {
   const shader = (Sky as unknown as { SkyShader: { uniforms: Record<string, THREE.IUniform>; vertexShader: string; fragmentShader: string } }).SkyShader;
   const mat = new THREE.ShaderMaterial({
     name: 'PhysicalSky',
@@ -142,39 +142,46 @@ function SkyEnvironment({ sky, gradient, sunDir, intensity, ground = '#8a8378' }
  * exactly where the terrain is (seamless, nothing overlaps, nothing z-fights),
  * fading into the horizon with the fog.
  */
-function SurroundingGround({ material, color, scene, center, radius }: { material?: THREE.Material; color: string; scene: import('@/core/schema/scene').Scene; center: THREE.Vector3; radius: number }) {
+/** Ground reaching the horizon, with a hole where the site terrain is (its pool cut-outs stay open). */
+export function surroundingGroundGeometry(scene: import('@/core/schema/scene').Scene, center: THREE.Vector3, R: number): { geometry: THREE.BufferGeometry; y: number } {
   const terrain = scene.elements.find((e) => e.type === 'terrain');
   const base = scene.levels[0]?.elevation ?? 0;
-  // Reaches the horizon, so the fogged ground meets the sky without a gap.
-  const R = Math.max(radius * 40, 1500);
-  const geo = useMemo(() => {
-    const outer = new THREE.Shape();
-    outer.moveTo(center.x - R, -(center.z - R));
-    outer.lineTo(center.x + R, -(center.z - R));
-    outer.lineTo(center.x + R, -(center.z + R));
-    outer.lineTo(center.x - R, -(center.z + R));
-    outer.closePath();
-    if (terrain && terrain.type === 'terrain') {
-      const hw = terrain.width / 2;
-      const hd = terrain.depth / 2;
-      const hole = new THREE.Path();
-      hole.moveTo(terrain.center.x - hw, -(terrain.center.z - hd));
-      hole.lineTo(terrain.center.x - hw, -(terrain.center.z + hd));
-      hole.lineTo(terrain.center.x + hw, -(terrain.center.z + hd));
-      hole.lineTo(terrain.center.x + hw, -(terrain.center.z - hd));
-      hole.closePath();
-      outer.holes.push(hole);
-    }
-    const g = new THREE.ShapeGeometry(outer);
-    g.rotateX(-Math.PI / 2);
-    return g;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(terrain ?? null), center.x, center.z, R]);
-  useEffect(() => () => geo.dispose(), [geo]);
+  const outer = new THREE.Shape();
+  outer.moveTo(center.x - R, -(center.z - R));
+  outer.lineTo(center.x + R, -(center.z - R));
+  outer.lineTo(center.x + R, -(center.z + R));
+  outer.lineTo(center.x - R, -(center.z + R));
+  outer.closePath();
+  if (terrain && terrain.type === 'terrain') {
+    const hw = terrain.width / 2;
+    const hd = terrain.depth / 2;
+    const hole = new THREE.Path();
+    hole.moveTo(terrain.center.x - hw, -(terrain.center.z - hd));
+    hole.lineTo(terrain.center.x - hw, -(terrain.center.z + hd));
+    hole.lineTo(terrain.center.x + hw, -(terrain.center.z + hd));
+    hole.lineTo(terrain.center.x + hw, -(terrain.center.z - hd));
+    hole.closePath();
+    outer.holes.push(hole);
+  }
+  const g = new THREE.ShapeGeometry(outer);
+  g.rotateX(-Math.PI / 2);
   // Without a site terrain the ground sits just under the ground-floor slab.
   const y = terrain && terrain.type === 'terrain' ? base + terrain.elevation : base - 0.02;
+  return { geometry: g, y };
+}
+
+function SurroundingGround({ material, color, scene, center, radius }: { material?: THREE.Material; color: string; scene: import('@/core/schema/scene').Scene; center: THREE.Vector3; radius: number }) {
+  const terrain = scene.elements.find((e) => e.type === 'terrain');
+  // Reaches the horizon, so the fogged ground meets the sky without a gap.
+  const R = Math.max(radius * 40, 1500);
+  const ground = useMemo(
+    () => surroundingGroundGeometry(scene, center, R),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(terrain ?? null), center.x, center.z, R],
+  );
+  useEffect(() => () => ground.geometry.dispose(), [ground]);
   return (
-    <mesh geometry={geo} position-y={y} receiveShadow raycast={() => {}} material={material}>
+    <mesh geometry={ground.geometry} position-y={ground.y} receiveShadow raycast={() => {}} material={material}>
       {material ? null : <meshStandardMaterial color={color} roughness={1} metalness={0} />}
     </mesh>
   );

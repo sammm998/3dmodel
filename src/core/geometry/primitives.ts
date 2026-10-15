@@ -146,6 +146,8 @@ export interface SolidSpec {
   thickness?: number;
   taper?: number;
   arcDeg?: number;
+  /** Rounded-box smoothness (segments per rounded edge). */
+  segments?: number;
 }
 
 /**
@@ -207,7 +209,7 @@ export function solidGeometry(s: SolidSpec): THREE.BufferGeometry {
     default: {
       const r = Math.min(s.cornerRadius ?? 0, w / 2, h / 2, d / 2);
       if (r > 0.002) {
-        const g = new RoundedBoxGeometry(w, h, d, 4, r);
+        const g = new RoundedBoxGeometry(w, h, d, s.segments ?? 4, r);
         return projectUV(g);
       }
       return boxGeometry(w, h, d);

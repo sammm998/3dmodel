@@ -127,10 +127,10 @@ npm run typecheck && npm run lint
   * Walls are straight segments; there are no arcs or splines.
   * Joins extend centre-lines, which is good for L and T junctions but has no mitering for acute angles.
   * Skylights sit on the roof surface without cutting it.
-* **Rendering — no offline photorealistic renderer yet.**
-  * Realistic and Presentation modes are a real-time rasterizer: PBR, shadows, IBL and AO, so GI is approximate.
-  * I integrated a browser path tracer (three-gpu-pathtracer 0.0.24) but removed it: with three r180 it assigned materials to the wrong meshes, and I would not ship a visibly broken render.
-  * The intended path is either a newer three + three-gpu-pathtracer, or a server-side Blender/Cycles job that consumes the GLB export (which already carries geometry, materials and element names).
+* **Rendering:**
+  * Realistic and Presentation modes are a real-time rasterizer: PBR, shadows, IBL and AO, so global illumination is approximate.
+  * **Photo** (top bar) path traces the current view in the browser (three-gpu-pathtracer 0.0.27 on three r186): light bounces, soft shadows, reflections and refractive glass. It converges over a few seconds to minutes depending on the GPU; there is no denoiser yet, so stop early for a slightly grainy draft.
+  * Materials are procedural (generated textures), not photographed or scanned surfaces, and furniture is parametric; a scanned digital twin of a real building will still look more "lived in".
 * **Not implemented yet:**
   * multi-user accounts and authentication (share links are capability URLs);
   * real-time collaboration;
@@ -184,6 +184,6 @@ tests/                      unit, integration (exports validated by external too
 * **No Redis or job queue.** Every long operation (LLM calls, analysis) is request-scoped, and rendering happens on the client. A queue becomes necessary if a server-side render farm is added.
 * **Local object storage** behind an interface (`ObjectStorage`). An S3 adapter is a drop-in.
 * **shadcn/ui-style components** written directly on Radix primitives, the same approach as the shadcn CLI, kept in `src/client/ui`.
-* **No offline render pipeline yet** (see limitations). Blender is not available in this environment, so I did not add code I could not verify.
+* **Path tracing in the browser** for photos (no render farm). A server-side Blender/Cycles job fed by the GLB export remains an option for very large images.
 
 See `docs/ARCHITECTURE.md` for the schema, the operation language and the drawing pipeline in detail.

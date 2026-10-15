@@ -457,7 +457,6 @@ export class MaterialManager {
       metalness: def.metalness,
       envMapIntensity: def.category === 'metal' ? 1.1 : 0.85,
     });
-    if (def.category === 'landscape' && def.id === 'foliage') m.flatShading = true;
     return m;
   }
 

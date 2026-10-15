@@ -800,57 +800,99 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
   const D = el.depth;
   const H = el.height;
   const B = (m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number) => addBox(g, m, w, h, d, x, y, z);
+  /** Rounded block: real furniture has eased edges and soft upholstery that catch the light. */
+  const R = (m: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number, r: number, seg = 3) => {
+    const mesh = new THREE.Mesh(solidGeometry({ shape: 'box', width: w, height: h, depth: d, cornerRadius: r, segments: seg }), m);
+    mesh.position.set(x, y, z);
+    g.add(mesh);
+    return mesh;
+  };
+  /** Tapered round leg standing on the floor. */
+  const leg = (m: THREE.Material, x: number, z: number, h: number, r = 0.02, taper = 0.65) => {
+    const mesh = new THREE.Mesh(solidGeometry({ shape: 'cylinder', width: 2 * r, depth: 2 * r, height: h, taper: 1 / taper }), m);
+    mesh.position.set(x, h / 2, z);
+    g.add(mesh);
+  };
   const legs = (m: THREE.Material, w: number, d: number, h: number, s = 0.04, inset = 0.06) => {
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) B(m, s, h, s, sx * (w / 2 - inset), h / 2, sz * (d / 2 - inset));
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) leg(m, sx * (w / 2 - inset), sz * (d / 2 - inset), h, s / 2);
   };
   switch (el.kind) {
     case 'sofa':
     case 'armchair': {
-      const legH = 0.08;
-      const seatH = 0.42;
-      const armW = Math.min(0.18, W * 0.12);
-      legs(m2, W - 0.1, D - 0.1, legH, 0.04);
-      B(m1, W, seatH - legH - 0.1, D, 0, legH + (seatH - legH - 0.1) / 2, 0);
-      B(m1, W - 2 * armW, H - seatH + 0.05, 0.2, 0, seatH + (H - seatH) / 2 - 0.05, -D / 2 + 0.1);
-      B(m1, armW, 0.62 - legH, D, -W / 2 + armW / 2, legH + (0.62 - legH) / 2, 0);
-      B(m1, armW, 0.62 - legH, D, W / 2 - armW / 2, legH + (0.62 - legH) / 2, 0);
+      const legH = 0.1;
+      const seatH = 0.44;
+      const armW = Math.min(0.2, W * 0.12);
+      const armH = 0.62;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) leg(m2, sx * (W / 2 - 0.08), sz * (D / 2 - 0.08), legH, 0.018, 0.7);
+      // Upholstered base, back and arms with soft edges.
+      const baseH = seatH - legH - 0.12;
+      R(m1, W, baseH, D, 0, legH + baseH / 2, 0, 0.035);
+      R(m1, W, H - legH - 0.02, 0.2, 0, legH + (H - legH - 0.02) / 2, -D / 2 + 0.1, 0.06);
+      for (const sx of [-1, 1]) R(m1, armW, armH - legH, D, sx * (W / 2 - armW / 2), legH + (armH - legH) / 2, 0, 0.07);
+      // Seat and back cushions: plump, slightly separated.
       const n = el.kind === 'armchair' ? 1 : W > 2.1 ? 3 : 2;
       const cw = (W - 2 * armW) / n;
-      for (let i = 0; i < n; i++) B(m1, cw - 0.02, 0.12, D - 0.25, -W / 2 + armW + cw * (i + 0.5), seatH - 0.04, 0.1);
+      for (let i = 0; i < n; i++) {
+        const x = -W / 2 + armW + cw * (i + 0.5);
+        R(m1, cw - 0.015, 0.15, D - 0.24, x, seatH - 0.05, 0.1, 0.06, 4);
+        const back = R(m1, cw - 0.03, Math.max(0.2, H - seatH - 0.02), 0.16, x, seatH + (H - seatH) / 2, -D / 2 + 0.27, 0.07, 4);
+        back.rotation.x = -0.12;
+      }
       break;
     }
     case 'coffee_table':
-      B(m1, W, 0.04, D, 0, H - 0.02, 0);
-      legs(m2, W, D, H - 0.04, 0.03, 0.05);
+      R(m1, W, 0.04, D, 0, H - 0.02, 0, 0.012);
+      legs(m2, W, D, H - 0.04, 0.035, 0.06);
       break;
     case 'dining_table':
     case 'desk':
-      B(m1, W, 0.04, D, 0, H - 0.02, 0);
+      R(m1, W, 0.04, D, 0, H - 0.02, 0, 0.01);
       if (el.kind === 'desk') {
-        B(m2, 0.04, H - 0.04, D - 0.1, -W / 2 + 0.05, (H - 0.04) / 2, 0);
-        B(m2, 0.04, H - 0.04, D - 0.1, W / 2 - 0.05, (H - 0.04) / 2, 0);
-      } else legs(m2, W, D, H - 0.04, 0.06, 0.09);
+        R(m2, 0.04, H - 0.04, D - 0.1, -W / 2 + 0.05, (H - 0.04) / 2, 0, 0.008);
+        R(m2, 0.04, H - 0.04, D - 0.1, W / 2 - 0.05, (H - 0.04) / 2, 0, 0.008);
+        R(m2, W - 0.14, 0.12, 0.018, 0, H - 0.12, -D / 2 + 0.08, 0.004);
+      } else {
+        legs(m2, W, D, H - 0.04, 0.06, 0.1);
+        // Apron under the top.
+        R(m1, W - 0.2, 0.07, 0.022, 0, H - 0.075, D / 2 - 0.1, 0.004);
+        R(m1, W - 0.2, 0.07, 0.022, 0, H - 0.075, -D / 2 + 0.1, 0.004);
+      }
       break;
-    case 'chair':
-      B(m1, W, 0.04, D, 0, 0.45, 0);
-      B(m1, W, 0.38, 0.03, 0, 0.45 + 0.21, -D / 2 + 0.015);
-      legs(m1, W, D, 0.43, 0.03, 0.03);
+    case 'chair': {
+      R(m1, W, 0.045, D, 0, 0.45, 0, 0.012);
+      const back = R(m1, W - 0.02, 0.36, 0.028, 0, 0.45 + 0.22, -D / 2 + 0.02, 0.012);
+      back.rotation.x = 0.1;
+      R(m2, W - 0.06, 0.03, D - 0.08, 0, 0.485, 0.01, 0.014, 3);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) leg(m1, sx * (W / 2 - 0.035), sz * (D / 2 - 0.035), 0.43, 0.016, 0.75);
       break;
-    case 'office_chair':
-      B(m1, W * 0.85, 0.08, D * 0.85, 0, 0.48, 0);
-      B(m1, W * 0.8, 0.5, 0.06, 0, 0.8, -D * 0.38);
-      addCyl(g, m2, 0.025, 0.025, 0.4, 0, 0.24, 0, 12);
-      B(m2, W, 0.03, 0.06, 0, 0.05, 0);
-      B(m2, 0.06, 0.03, D, 0, 0.05, 0);
+    }
+    case 'office_chair': {
+      R(m1, W * 0.85, 0.08, D * 0.85, 0, 0.48, 0, 0.035);
+      R(m1, W * 0.8, 0.52, 0.06, 0, 0.82, -D * 0.38, 0.03);
+      addCyl(g, m2, 0.025, 0.025, 0.4, 0, 0.24, 0, 16);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const arm = R(m2, W / 2, 0.03, 0.05, Math.cos(a) * W / 4, 0.06, Math.sin(a) * W / 4, 0.012);
+        arm.rotation.y = -a;
+        const wheel = new THREE.Mesh(solidGeometry({ shape: 'sphere', width: 0.05, height: 0.05, depth: 0.05 }), ctx.material('paint_black'));
+        wheel.position.set(Math.cos(a) * (W / 2 - 0.02), 0.025, Math.sin(a) * (W / 2 - 0.02));
+        g.add(wheel);
+      }
       break;
+    }
     case 'bed': {
-      B(m2, W + 0.04, 0.28, D, 0, 0.2, 0);
-      B(m1, W, 0.22, D - 0.06, 0, 0.45, 0.02);
-      B(m2, W + 0.04, 0.95, 0.08, 0, 0.475, -D / 2 - 0.04);
+      // Frame, mattress, upholstered headboard, pillows and a duvet that hangs over the edges.
+      R(m2, W + 0.06, 0.26, D + 0.02, 0, 0.19, 0, 0.02);
+      R(ctx.material('paint_white'), W - 0.02, 0.22, D - 0.08, 0, 0.42, 0.02, 0.05, 4);
+      R(m2, W + 0.08, 1.0, 0.09, 0, 0.5, -D / 2 - 0.04, 0.035);
       const pillow = ctx.material('paint_white');
-      const pw = W > 1.2 ? W / 2 - 0.12 : W - 0.2;
-      for (const sx of W > 1.2 ? [-1, 1] : [0]) B(pillow, pw, 0.12, 0.38, sx * (W / 4), 0.62, -D / 2 + 0.3);
-      B(ctx.material('fabric_beige'), W + 0.02, 0.05, D * 0.35, 0, 0.58, D * 0.3);
+      const pw = W > 1.2 ? W / 2 - 0.14 : W - 0.24;
+      for (const sx of W > 1.2 ? [-1, 1] : [0]) {
+        const p = R(pillow, pw, 0.14, 0.42, sx * (W / 4), 0.6, -D / 2 + 0.32, 0.065, 4);
+        p.rotation.x = -0.28;
+      }
+      R(m1, W + 0.06, 0.07, D * 0.68, 0, 0.555, D * 0.15, 0.035, 4);
+      R(ctx.material('fabric_beige'), W + 0.1, 0.05, D * 0.22, 0, 0.6, D * 0.3, 0.025, 3);
       break;
     }
     case 'nightstand':
@@ -864,7 +906,7 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
         for (let i = 0; i <= n; i++) B(m1, W - 0.06, 0.025, D, 0, 0.0125 + ((H - 0.025) * i) / n, 0);
         break;
       }
-      B(m1, W, H, D, 0, H / 2, 0);
+      R(m1, W, H, D, 0, H / 2, 0, 0.008, 2);
       if (el.kind === 'wardrobe') {
         const doors = Math.max(2, Math.round(W / 0.6));
         for (let i = 1; i < doors; i++) B(ctx.material('paint_black'), 0.004, H - 0.06, 0.004, -W / 2 + (W * i) / doors, H / 2, D / 2 + 0.002);
@@ -894,12 +936,40 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
       B(m1, W, Math.max(H, 0.008), D, 0, Math.max(H, 0.008) / 2, 0);
       break;
     case 'plant': {
+      // Tapered pot with soil, a few stems and an irregular crown of leaf clusters.
       const r = Math.min(W, D) / 2;
-      addCyl(g, m2, r * 0.7, r * 0.55, Math.min(0.45, H * 0.35), 0, Math.min(0.45, H * 0.35) / 2, 0, 20);
-      const fol = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), m1);
-      fol.scale.set(1, (H * 0.7) / (2 * r), 1);
-      fol.position.y = Math.min(0.45, H * 0.35) + H * 0.33;
-      g.add(fol);
+      const potH = Math.min(0.45, H * 0.35);
+      const pot = new THREE.Mesh(solidGeometry({ shape: 'cylinder', width: r * 1.3, depth: r * 1.3, height: potH, taper: 1.3 }), m2);
+      pot.position.y = potH / 2;
+      g.add(pot);
+      addCyl(g, ctx.material('gravel'), r * 0.8, r * 0.8, 0.02, 0, potH - 0.02, 0, 20);
+      let seed = [...el.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 17);
+      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const crownY = potH + (H - potH) * 0.6;
+      const stemM = ctx.material('wood_deck');
+      const clusters = 7;
+      for (let i = 0; i < clusters; i++) {
+        const a = (i / clusters) * Math.PI * 2 + rnd() * 0.6;
+        const dist = i === 0 ? 0 : r * (0.35 + rnd() * 0.45);
+        const y = crownY + (rnd() - 0.4) * (H - potH) * 0.45;
+        const size = r * (0.55 + rnd() * 0.4) * (i === 0 ? 1.25 : 1);
+        const geo = new THREE.IcosahedronGeometry(size, 2);
+        // Lumpy, leafy silhouette.
+        const pos = geo.attributes.position as THREE.BufferAttribute;
+        for (let k = 0; k < pos.count; k++) {
+          const f = 0.82 + 0.3 * Math.abs(Math.sin(pos.getX(k) * 23 + pos.getY(k) * 17 + pos.getZ(k) * 29 + i));
+          pos.setXYZ(k, pos.getX(k) * f, pos.getY(k) * f * 0.85, pos.getZ(k) * f);
+        }
+        geo.computeVertexNormals();
+        const leaf = new THREE.Mesh(geo, m1);
+        leaf.position.set(Math.cos(a) * dist, y, Math.sin(a) * dist);
+        g.add(leaf);
+        const sx = Math.cos(a) * dist * 0.5;
+        const sz = Math.sin(a) * dist * 0.5;
+        const stemLen = Math.max(0.05, y - potH);
+        const stem = addCyl(g, stemM, 0.006, 0.009, stemLen, sx, potH + stemLen / 2, sz, 6);
+        stem.rotation.set(Math.sin(a) * dist * 0.6, 0, -Math.cos(a) * dist * 0.6);
+      }
       break;
     }
     case 'floor_lamp': {
@@ -915,12 +985,12 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
       break;
     }
     case 'bathtub': {
-      const wt = 0.06;
-      B(m1, W, 0.06, D, 0, 0.03, 0);
-      B(m1, W, H, wt, 0, H / 2, D / 2 - wt / 2);
-      B(m1, W, H, wt, 0, H / 2, -D / 2 + wt / 2);
-      B(m1, wt, H, D - 2 * wt, W / 2 - wt / 2, H / 2, 0);
-      B(m1, wt, H, D - 2 * wt, -W / 2 + wt / 2, H / 2, 0);
+      // Rounded tub shell with a basin inset in the rim and a spout.
+      R(m1, W, H, D, 0, H / 2, 0, 0.06, 4);
+      const top = new THREE.Mesh(solidGeometry({ shape: 'box', width: W - 0.16, height: 0.01, depth: D - 0.16, cornerRadius: 0.004 }), ctx.material('tile_white'));
+      top.position.set(0, H + 0.002, 0);
+      g.add(top);
+      addCyl(g, ctx.material('steel'), 0.015, 0.015, 0.16, W / 2 - 0.12, H + 0.08, -D / 2 + 0.06, 12);
       break;
     }
     case 'shower': {
@@ -933,15 +1003,16 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
       break;
     }
     case 'toilet': {
-      B(m1, W * 0.85, 0.4, D * 0.6, 0, 0.2, D * 0.1);
-      B(m1, W, 0.06, D * 0.7, 0, 0.42, D * 0.1);
-      B(m1, W, 0.4, 0.18, 0, 0.6, -D / 2 + 0.09);
+      R(m1, W * 0.8, 0.4, D * 0.6, 0, 0.2, D * 0.1, 0.12, 4);
+      R(m1, W, 0.05, D * 0.68, 0, 0.425, D * 0.1, 0.02, 3);
+      R(m1, W, 0.38, 0.17, 0, 0.6, -D / 2 + 0.085, 0.04, 3);
       break;
     }
     case 'vanity': {
-      B(m1, W, 0.45, D, 0, H - 0.04 - 0.225, 0);
-      B(m2, W, 0.04, D, 0, H - 0.02, 0);
-      B(ctx.material('paint_white'), 0.45, 0.12, 0.35, 0, H + 0.06, 0.02);
+      R(m1, W, 0.45, D, 0, H - 0.04 - 0.225, 0, 0.008, 2);
+      R(m2, W, 0.04, D, 0, H - 0.02, 0, 0.006, 2);
+      R(ctx.material('paint_white'), 0.45, 0.12, 0.35, 0, H + 0.06, 0.02, 0.04, 4);
+      addCyl(g, ctx.material('steel'), 0.012, 0.012, 0.18, 0, H + 0.09, -D / 2 + 0.08, 12);
       B(ctx.material('glass_tinted'), W * 0.9, 0.7, 0.01, 0, H + 0.65, -D / 2 + 0.005);
       break;
     }
