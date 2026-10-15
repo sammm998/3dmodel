@@ -119,6 +119,9 @@ export function PhotoDialog({ open, onOpenChange }: { open: boolean; onOpenChang
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
+              <a href="https://polyhaven.com" target="_blank" rel="noreferrer" className="text-[10.5px] text-ink-400 hover:text-ink-200">
+                Textures powered by Poly Haven
+              </a>
               <div className="h-1.5 w-40 overflow-hidden rounded-full bg-white/10">
                 <div className="h-full bg-accent transition-all" style={{ width: `${Math.min(100, (samples / max) * 100)}%` }} />
               </div>

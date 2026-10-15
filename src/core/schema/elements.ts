@@ -218,6 +218,8 @@ export const FurnitureKind = z.enum([
   'toilet',
   'vanity',
   'lounger',
+  'tree',
+  'shrub',
   'box',
 ]);
 export type FurnitureKind = z.infer<typeof FurnitureKind>;

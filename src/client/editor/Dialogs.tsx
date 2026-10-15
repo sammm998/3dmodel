@@ -7,6 +7,7 @@ import { downloadBlob, cn } from '../lib/utils';
 import { exportGLB, exportOBJ, exportSTL } from '@/core/export/meshExport';
 import { exportIFC } from '@/core/export/ifc';
 import { exportDXF } from '@/core/export/dxf';
+import { materialSlots } from '@/core/scene/query';
 import { MaterialManager } from '../three/materials';
 import { captureImage } from './capture';
 import { api } from '../lib/api';
@@ -62,6 +63,12 @@ export function ExportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       switch (format) {
         case 'glb': {
           const mm = new MaterialManager('realistic', scene.materials);
+          // Request every material up front so the photographed textures are in the file.
+          for (const el of scene.elements) for (const slot of materialSlots(el)) {
+            const ref = (el as unknown as Record<string, unknown>)[slot];
+            if (typeof ref === 'string') mm.get(ref);
+          }
+          await mm.ready(15_000);
           const buf = await exportGLB(scene, { ids, material: (ref) => (ref === '__room' ? mm.get('paint_white') : mm.get(ref)) });
           downloadBlob(buf, `${base}.glb`, 'model/gltf-binary');
           break;

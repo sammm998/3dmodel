@@ -109,10 +109,17 @@ export function moveRoomOps(scene: Scene, roomId: string, dx: number, dz: number
   return { ops, wholeRoom: true };
 }
 
+/** East edge of everything built, including tree crowns. */
+function eastEdge(scene: Scene): number | null {
+  const b = sceneBounds({ ...scene, elements: scene.elements.filter((e) => e.type !== 'terrain') });
+  let x = b ? b.max.x : null;
+  for (const e of scene.elements) if (e.type === 'furniture' && (e.kind === 'tree' || e.kind === 'shrub')) x = Math.max(x ?? -Infinity, e.position.x + e.width / 2);
+  return x;
+}
+
 /** Where a copy of something `width` wide goes: beside the building on the east, with a gap. */
 function besideBuilding(scene: Scene, roomBox: { minX: number; maxX: number; minZ: number }, gap = 2) {
-  const b = sceneBounds({ ...scene, elements: scene.elements.filter((e) => e.type !== 'terrain') });
-  const right = b ? b.max.x : roomBox.maxX;
+  const right = eastEdge(scene) ?? roomBox.maxX;
   return { dx: round(right + gap - roomBox.minX, 3), dz: 0 };
 }
 
@@ -218,6 +225,7 @@ export function roomTemplateOps(scene: Scene, templateId: string): OperationInpu
   const t = ROOM_TEMPLATES.find((x) => x.id === templateId);
   if (!t) return [];
   const b = sceneBounds({ ...scene, elements: scene.elements.filter((e) => e.type !== 'terrain') });
-  const origin = b ? { x: round(b.max.x + 2 + t.width / 2, 3), z: round((b.min.z + b.max.z) / 2, 3) } : { x: 0, z: 0 };
+  const east = eastEdge(scene);
+  const origin = b && east !== null ? { x: round(east + 2 + t.width / 2, 3), z: round((b.min.z + b.max.z) / 2, 3) } : { x: 0, z: 0 };
   return [{ op: 'generate_building', program: roomTemplateProgram(t), mode: 'append', origin }];
 }

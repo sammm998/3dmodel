@@ -49,6 +49,8 @@ export const FURNITURE_DEFAULTS: Record<FurnitureKind, { w: number; d: number; h
   toilet: { w: 0.4, d: 0.65, h: 0.8, m: 'tile_white', label: 'Toilet' },
   vanity: { w: 1.0, d: 0.5, h: 0.85, m: 'oak', m2: 'marble_white', label: 'Vanity' },
   lounger: { w: 0.7, d: 1.9, h: 0.4, m: 'wood_deck', m2: 'fabric_beige', label: 'Lounger' },
+  tree: { w: 4.5, d: 4.5, h: 7.5, m: 'foliage', m2: 'bark', label: 'Tree' },
+  shrub: { w: 1.3, d: 1.3, h: 1.1, m: 'foliage', label: 'Shrub' },
   box: { w: 1, d: 1, h: 1, m: 'oak', label: 'Object' },
 };
 
@@ -639,6 +641,8 @@ const FURNITURE_WORDS: [RegExp, FurnitureKind][] = [
   [/toilet|wc|toalett/, 'toilet'],
   [/vanity|sink|handfat/, 'vanity'],
   [/lounger|sunbed|solstol/, 'lounger'],
+  [/\btrees?\b|träd/, 'tree'],
+  [/shrub|bush|hedge|buske|buskar|häck/, 'shrub'],
 ];
 
 export function matchFurnitureKind(text: string): FurnitureKind | undefined {

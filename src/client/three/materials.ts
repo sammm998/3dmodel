@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { resolveMaterial, type MaterialDef, type TexturePattern } from '@/core/materials/library';
 import type { CustomMaterial } from '@/core/schema/scene';
+import { PHOTO_MATERIALS } from '@/core/materials/photo';
 
 export type RenderStyle = 'technical' | 'realistic';
 
@@ -343,6 +344,81 @@ function texturesFor(def: MaterialDef): TexturePair | null {
   return textureCache.get(key) ?? null;
 }
 
+// ---- photographed textures ----------------------------------------------------
+
+interface PhotoSet {
+  map: THREE.Texture;
+  normal: THREE.Texture;
+  rough: THREE.Texture;
+  /** Average albedo (linear) of the scan, for tinting it to a material's colour. */
+  mean: THREE.Color;
+}
+
+const photoCache = new Map<string, Promise<PhotoSet | null>>();
+let photoFailures = 0;
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.decoding = 'async';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`texture ${url}`));
+    img.src = url;
+  });
+}
+
+/** Loads (once) the scanned maps of a Poly Haven asset through the app's texture service. */
+function loadPhotoSet(asset: string, res: '1k' | '2k'): Promise<PhotoSet | null> {
+  const key = `${asset}@${res}`;
+  let p = photoCache.get(key);
+  if (p) return p;
+  p = (async () => {
+    // After repeated failures (offline, service unavailable) stop trying this session.
+    if (photoFailures >= 3 || typeof document === 'undefined') return null;
+    try {
+      const base = `/api/textures/${asset}`;
+      const [metaRes, diff, nor, rough] = await Promise.all([
+        fetch(`${base}/meta`).then((r) => (r.ok ? r.json() : { width: 2, height: 2 })),
+        loadImage(`${base}/diff?res=${res}`),
+        loadImage(`${base}/nor?res=${res}`),
+        loadImage(`${base}/rough?res=${res}`),
+      ]);
+      const meta = metaRes as { width: number; height: number };
+      // Mean colour from a tiny downsample.
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 16;
+      const ctx = cv.getContext('2d')!;
+      ctx.drawImage(diff, 0, 0, 16, 16);
+      const px = ctx.getImageData(0, 0, 16, 16).data;
+      const mean = new THREE.Color(0, 0, 0);
+      const c = new THREE.Color();
+      for (let i = 0; i < px.length; i += 4) {
+        c.setRGB(px[i] / 255, px[i + 1] / 255, px[i + 2] / 255, THREE.SRGBColorSpace);
+        mean.r += c.r;
+        mean.g += c.g;
+        mean.b += c.b;
+      }
+      mean.multiplyScalar(1 / (px.length / 4));
+      const tex = (img: HTMLImageElement, srgb: boolean) => {
+        const t = new THREE.Texture(img);
+        if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        // UVs are in metres: one repeat per scanned tile size.
+        t.repeat.set(1 / Math.max(0.1, meta.width), 1 / Math.max(0.1, meta.height));
+        t.anisotropy = 8;
+        t.needsUpdate = true;
+        return t;
+      };
+      return { map: tex(diff, true), normal: tex(nor, false), rough: tex(rough, false), mean };
+    } catch {
+      photoFailures++;
+      return null;
+    }
+  })();
+  photoCache.set(key, p);
+  return p;
+}
+
 /** Lightened, untextured colour for technical (modelling) display. */
 function technicalColor(def: MaterialDef): THREE.Color {
   const c = new THREE.Color(def.color);
@@ -362,7 +438,41 @@ export class MaterialManager {
      * close to or moving past glass, and much cheaper.
      */
     private glass: 'transmission' | 'transparent' = 'transparent',
+    /** Called when photographed textures arrive and materials changed (request a frame). */
+    private onChange?: () => void,
+    private photoRes: '1k' | '2k' = '1k',
   ) {}
+
+  private pending: Promise<unknown>[] = [];
+
+  /** Resolves when the photographed textures requested so far are applied (or failed), at most `ms`. */
+  ready(ms = 10_000): Promise<void> {
+    return Promise.race([Promise.allSettled(this.pending).then(() => undefined), new Promise<void>((r) => setTimeout(r, ms))]);
+  }
+
+  /** Swaps a procedural material onto the scanned texture set, tinted to the library colour. */
+  private upgradeToPhoto(m: THREE.MeshStandardMaterial, def: MaterialDef) {
+    const spec = PHOTO_MATERIALS[def.id];
+    if (!spec || this.style !== 'realistic') return;
+    const job = loadPhotoSet(spec.asset, this.photoRes).then((set) => {
+      if (!set) return;
+      const target = new THREE.Color(def.color);
+      const tint = new THREE.Color(
+        Math.min(3, target.r / Math.max(set.mean.r, 0.02)),
+        Math.min(3, target.g / Math.max(set.mean.g, 0.02)),
+        Math.min(3, target.b / Math.max(set.mean.b, 0.02)),
+      );
+      m.color.copy(tint);
+      m.map = set.map;
+      m.normalMap = set.normal;
+      m.normalScale.setScalar(spec.normalScale ?? 1);
+      m.roughnessMap = set.rough;
+      m.roughness = spec.roughness ?? 1;
+      m.needsUpdate = true;
+      this.onChange?.();
+    });
+    this.pending.push(job);
+  }
 
   get = (ref: string): THREE.Material => {
     const customKey = this.custom.find((c) => c.id === ref);
@@ -457,6 +567,7 @@ export class MaterialManager {
       metalness: def.metalness,
       envMapIntensity: def.category === 'metal' ? 1.1 : 0.85,
     });
+    this.upgradeToPhoto(m, def);
     return m;
   }
 

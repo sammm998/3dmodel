@@ -113,7 +113,8 @@ export const MATERIALS: MaterialDef[] = [
   M({ id: 'grass', name: 'Lawn', nameSv: 'Gräsmatta', category: 'landscape', color: '#5d7d3c', color2: '#4b6a2f', roughness: 1, metalness: 0, pattern: 'grass', tileSize: 3, keywords: ['grass', 'lawn', 'gräs', 'gräsmatta'] }),
   M({ id: 'gravel', name: 'Gravel', nameSv: 'Grus', category: 'landscape', color: '#b1aa9d', color2: '#8d877b', roughness: 1, metalness: 0, pattern: 'gravel', tileSize: 1, keywords: ['gravel', 'grus'] }),
   M({ id: 'water', name: 'Pool water', nameSv: 'Vatten', category: 'landscape', color: '#3d9bb5', roughness: 0.05, metalness: 0, pattern: 'water', tileSize: 4, opacity: 0.75, transmission: 0.6, ior: 1.33, keywords: ['water', 'vatten'] }),
-  M({ id: 'foliage', name: 'Foliage', nameSv: 'Bladverk', category: 'landscape', color: '#4a6b35', roughness: 0.9, metalness: 0, pattern: 'none', tileSize: 1, keywords: ['plant', 'foliage', 'växt'] }),
+  M({ id: 'foliage', name: 'Foliage', nameSv: 'Bladverk', category: 'landscape', color: '#5f8040', color2: '#3f5e28', roughness: 0.85, metalness: 0, pattern: 'grass', tileSize: 0.6, keywords: ['plant', 'foliage', 'växt', 'leaves', 'löv'] }),
+  M({ id: 'bark', name: 'Tree bark', nameSv: 'Bark', category: 'landscape', color: '#7a6857', color2: '#57483b', roughness: 0.95, metalness: 0, pattern: 'stone', tileSize: 0.8, keywords: ['bark', 'trunk', 'stam'] }),
 ];
 
 const BY_ID = new Map(MATERIALS.map((m) => [m.id, m]));

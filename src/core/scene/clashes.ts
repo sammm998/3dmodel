@@ -139,7 +139,8 @@ function context(scene: Scene): Context {
 function furnitureClashes(ctx: Context, f: FurnitureElement, others: FurnitureElement[]): Clash[] {
   const out: Clash[] = [];
   const level = levelOf(ctx.scene, f).id;
-  const box = furnitureOBB(f, -0.01);
+  // A tree's crown may overhang roofs and garden furniture; only its trunk is solid.
+  const box = f.kind === 'tree' ? furnitureOBB({ ...f, width: 0.6, depth: 0.6 }, -0.01) : furnitureOBB(f, -0.01);
   const y0 = f.position.y;
   const y1 = f.position.y + f.height;
   if (FLAT(f) || OVERHEAD(f)) {
@@ -162,7 +163,7 @@ function furnitureClashes(ctx: Context, f: FurnitureElement, others: FurnitureEl
     }
   }
   const rooms = ctx.rooms.get(level) ?? [];
-  const outdoor = f.kind === 'lounger';
+  const outdoor = f.kind === 'lounger' || f.kind === 'tree' || f.kind === 'shrub';
   if (!outdoor && rooms.length && !rooms.some((r) => pointInPolygon({ x: f.position.x, z: f.position.z }, r.polygon))) {
     out.push({ elementId: f.id, kind: 'outside', message: `${f.name} stands outside the rooms` });
   }
@@ -171,7 +172,8 @@ function furnitureClashes(ctx: Context, f: FurnitureElement, others: FurnitureEl
     if (FLAT(f) || FLAT(o)) continue;
     if (y0 >= o.position.y + o.height || y1 <= o.position.y) continue;
     if ((TUCKS.has(f.kind) && TABLES.has(o.kind)) || (TUCKS.has(o.kind) && TABLES.has(f.kind))) continue;
-    if (obbOverlap(box, furnitureOBB(o, -0.01)) > 0.01) out.push({ elementId: f.id, otherId: o.id, kind: 'furniture', message: `${f.name} overlaps ${o.name}` });
+    const other = o.kind === 'tree' ? furnitureOBB({ ...o, width: 0.6, depth: 0.6 }, -0.01) : furnitureOBB(o, -0.01);
+    if (obbOverlap(box, other) > 0.01) out.push({ elementId: f.id, otherId: o.id, kind: 'furniture', message: `${f.name} overlaps ${o.name}` });
   }
   return out;
 }

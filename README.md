@@ -130,7 +130,8 @@ npm run typecheck && npm run lint
 * **Rendering:**
   * Realistic and Presentation modes are a real-time rasterizer: PBR, shadows, IBL and AO, so global illumination is approximate.
   * **Photo** (top bar) path traces the current view in the browser (three-gpu-pathtracer 0.0.27 on three r186): light bounces, soft shadows, reflections and refractive glass. It converges over a few seconds to minutes depending on the GPU; there is no denoiser yet, so stop early for a slightly grainy draft.
-  * Materials are procedural (generated textures), not photographed or scanned surfaces, and furniture is parametric; a scanned digital twin of a real building will still look more "lived in".
+  * Materials use photographed, CC0 PBR scans from [Poly Haven](https://polyhaven.com) (wood floors, decking, plaster, concrete, brick, marble, linen, leather, lawn, gravel). The server fetches them through Poly Haven's public API, caches them in `DATA_DIR/texture-cache` and serves them same-origin (`/api/textures/:asset/:map`); the browser tints each scan to the material's colour. If the server cannot reach Poly Haven the procedural textures are used instead. The interface shows the required "powered by Poly Haven" credit.
+  * Sites get trees and shrubs (planted clear of the house, terrace, pool and entrance); furniture is parametric, so a scanned digital twin of a real building will still look more "lived in".
 * **Not implemented yet:**
   * multi-user accounts and authentication (share links are capability URLs);
   * real-time collaboration;

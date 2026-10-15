@@ -688,6 +688,8 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
     z1: Math.max(...blocks.map((b) => b.rect.z1)),
   };
   let frontEdge = fp.z1;
+  /** Terrace, pool and other site works that planting keeps clear of. */
+  const siteWorks: Rect[] = [];
   const sideRect = (side: 'front' | 'back' | 'left' | 'right', depth: number, gap: number, along: Rect): Rect => {
     switch (side) {
       case 'front':
@@ -716,6 +718,7 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       }),
     );
     if (t.side === 'front') frontEdge = r.z1;
+    siteWorks.push(r);
   }
   if (P.extras.pool) {
     const p = P.extras.pool;
@@ -740,6 +743,9 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
       }),
     );
     if (side === 'front') frontEdge = r.z1;
+    siteWorks.push({ x0: cx - (horizontal ? p.length : p.width) / 2, x1: cx + (horizontal ? p.length : p.width) / 2, z0: cz - (horizontal ? p.width : p.length) / 2, z1: cz + (horizontal ? p.width : p.length) / 2 });
+    // Loungers beside the pool.
+    if (horizontal) siteWorks.push({ x0: cx + p.length / 2, x1: cx + p.length / 2 + 2.6, z0: cz - 1.2, z1: cz + 1.2 });
     if (P.furnish && horizontal) {
       for (let i = 0; i < 2; i++) {
         add(
@@ -777,6 +783,52 @@ export function generateBuilding(input: BuildingProgramInput, opts: GenerateOpti
         material: 'grass',
       }),
     );
+    if ((P.extras.landscape ?? true) && !interiorKind && P.kind !== 'office') {
+      plantSite({ x0: cx - size / 2, x1: cx + size / 2, z0: cz - size / 2, z1: cz + size / 2 });
+    }
+  }
+
+  /**
+   * Trees in a loose row behind the house and along the sides, shrubs at the house
+   * corners: clear of the building (3 m), the terrace and pool, the entrance side
+   * and each other, varied in size so the garden looks grown rather than placed.
+   */
+  function plantSite(site: Rect) {
+    let seed = Math.round((fp.x1 - fp.x0) * 1000 + (fp.z1 - fp.z0) * 37) >>> 0;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    const grow = (r: Rect, d: number): Rect => ({ x0: r.x0 - d, x1: r.x1 + d, z0: r.z0 - d, z1: r.z1 + d });
+    const inside = (x: number, z: number, r: Rect) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1;
+    const trees: { x: number; z: number; r: number }[] = [];
+    const tryTree = (x: number, z: number) => {
+      const h = 6 + rnd() * 3.5;
+      const w = 3.6 + rnd() * 1.8;
+      const rr = w / 2;
+      if (!inside(x, z, grow(site, -rr - 1))) return;
+      if (inside(x, z, grow(fp, 3 + rr * 0.6))) return;
+      if (siteWorks.some((r) => inside(x, z, grow(r, 1.5 + rr * 0.5)))) return;
+      // Keep the approach to the front clear.
+      if (z > fp.z1 && x > fp.x0 - 2 && x < fp.x1 + 2) return;
+      if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < (t.r + rr) * 0.9)) return;
+      trees.push({ x, z, r: rr });
+      add(createElement(scene, { type: 'furniture', kind: 'tree', name: `Tree ${trees.length}`, levelId: levels[0].id, position: { x: round(x, 2), y: 0, z: round(z, 2) }, rotation: round(rnd() * Math.PI * 2, 3), width: round(w, 2), depth: round(w, 2), height: round(h, 2), material: 'foliage', secondaryMaterial: 'bark' }));
+    };
+    const step = 6.5;
+    for (let x = fp.x0 - 3; x <= fp.x1 + 3; x += step) tryTree(x + (rnd() - 0.5) * 2, fp.z0 - 6.5 - rnd() * 2.5);
+    for (const sx of [fp.x0 - 6.5, fp.x1 + 6.5]) for (let z = fp.z0; z <= fp.z1 + 4; z += 7) tryTree(sx + (rnd() - 0.5) * 2, z + (rnd() - 0.5) * 2);
+    // Shrubs at the corners of the main block, outside the walls.
+    const mb = mainBlock.rect;
+    let n = 0;
+    for (const [x, z] of [
+      [mb.x0 - 0.9, mb.z1 + 0.9],
+      [mb.x1 + 0.9, mb.z1 + 0.9],
+      [mb.x0 - 0.9, mb.z0 - 0.9],
+      [mb.x1 + 0.9, mb.z0 - 0.9],
+    ] as [number, number][]) {
+      if (siteWorks.some((r) => inside(x, z, grow(r, 0.8)))) continue;
+      if (blocks.some((b) => b !== mainBlock && inside(x, z, grow(b.rect, 1.2)))) continue;
+      const w = 1.1 + rnd() * 0.5;
+      add(createElement(scene, { type: 'furniture', kind: 'shrub', name: `Shrub ${++n}`, levelId: levels[0].id, position: { x: round(x, 2), y: 0, z: round(z, 2) }, rotation: 0, width: round(w, 2), depth: round(w, 2), height: round(0.9 + rnd() * 0.4, 2), material: 'foliage' }));
+    }
   }
 
   // Final planning pass: no furniture in door clearances, in front of glazing, on stairs,

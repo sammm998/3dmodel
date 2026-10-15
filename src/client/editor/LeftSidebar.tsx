@@ -288,7 +288,7 @@ function MaterialsPanel() {
   );
 }
 
-const LIB_FURNITURE: FurnitureKind[] = ['sofa', 'armchair', 'coffee_table', 'dining_table', 'chair', 'bed', 'nightstand', 'wardrobe', 'kitchen_counter', 'kitchen_island', 'desk', 'office_chair', 'shelf', 'rug', 'plant', 'floor_lamp', 'pendant_lamp', 'tv_unit', 'bathtub', 'shower', 'toilet', 'vanity', 'lounger'];
+const LIB_FURNITURE: FurnitureKind[] = ['sofa', 'armchair', 'coffee_table', 'dining_table', 'chair', 'bed', 'nightstand', 'wardrobe', 'kitchen_counter', 'kitchen_island', 'desk', 'office_chair', 'shelf', 'rug', 'plant', 'floor_lamp', 'pendant_lamp', 'tv_unit', 'bathtub', 'shower', 'toilet', 'vanity', 'lounger', 'tree', 'shrub'];
 
 function LibraryPanel() {
   const target = () => {

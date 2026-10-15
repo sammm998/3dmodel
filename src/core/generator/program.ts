@@ -123,6 +123,8 @@ export const BuildingProgram = z.object({
         .object({ depth: len(30).default(4), side: z.enum(['front', 'back', 'left', 'right']).default('front'), material: z.string().max(64).default('wood_deck') })
         .optional(),
       terrain: z.boolean().optional(),
+      /** Trees and shrubs around the site (houses with a site terrain). */
+      landscape: z.boolean().optional(),
       stairs: z.boolean().default(true),
     })
     .default({}),

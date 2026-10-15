@@ -24,7 +24,7 @@ import type {
 } from '../schema/elements';
 import type { Scene } from '../schema/scene';
 import { computeWallExtensions, findElement, levelOf, wallFrame } from '../scene/query';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { boxGeometry, orientOutward, polygonsGeometry, prismPolygons, solidGeometry } from './primitives';
 
 export type MaterialFn = (ref: string) => THREE.Material;
@@ -792,6 +792,32 @@ function buildPool(el: PoolElement, ctx: BuildContext, y0: number): THREE.Object
 }
 
 // ---- Furniture -----------------------------------------------------------------
+/** A lumpy, leafy blob (irregular icosphere) for plants, shrubs and tree crowns. */
+function leafCluster(mat: THREE.Material, size: number, seed: number, x: number, y: number, z: number, squash = 0.85): THREE.Mesh {
+  // Welded icosphere (smooth shading), pushed in and out for a leafy silhouette.
+  let geo: THREE.BufferGeometry = new THREE.IcosahedronGeometry(size, 3);
+  geo.deleteAttribute('uv');
+  geo.deleteAttribute('normal');
+  geo = mergeVertices(geo, 1e-4);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const uv = new Float32Array(pos.count * 2);
+  for (let k = 0; k < pos.count; k++) {
+    const px = pos.getX(k);
+    const py = pos.getY(k);
+    const pz = pos.getZ(k);
+    const n = (px * 23 + py * 17 + pz * 29) / Math.max(size, 0.05) + seed * 1.7;
+    const f = 0.84 + 0.12 * Math.sin(n) + 0.08 * Math.sin(n * 2.7 + 1.3);
+    pos.setXYZ(k, px * f, py * f * squash, pz * f);
+    uv[k * 2] = px + pz;
+    uv[k * 2 + 1] = py;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set(x, y, z);
+  return m;
+}
+
 function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): THREE.Object3D {
   const g = new THREE.Group();
   const m1 = ctx.material(el.material);
@@ -1014,6 +1040,55 @@ function buildFurniture(el: FurnitureElement, ctx: BuildContext, y0: number): TH
       R(ctx.material('paint_white'), 0.45, 0.12, 0.35, 0, H + 0.06, 0.02, 0.04, 4);
       addCyl(g, ctx.material('steel'), 0.012, 0.012, 0.18, 0, H + 0.09, -D / 2 + 0.08, 12);
       B(ctx.material('glass_tinted'), W * 0.9, 0.7, 0.01, 0, H + 0.65, -D / 2 + 0.005);
+      break;
+    }
+    case 'tree': {
+      // Tapered trunk that forks into a few limbs, carrying an irregular crown of
+      // leaf clusters (denser and darker inside, lighter at the outside).
+      let seed = [...el.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 101);
+      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const bark = m2;
+      const trunkH = H * 0.38;
+      const trunkR = Math.max(0.12, Math.min(0.35, H * 0.03));
+      const trunk = new THREE.Mesh(solidGeometry({ shape: 'cylinder', width: trunkR * 2, depth: trunkR * 2, height: trunkH, taper: 0.7 }), bark);
+      trunk.position.y = trunkH / 2;
+      g.add(trunk);
+      const crownY = trunkH + (H - trunkH) * 0.45;
+      const crownR = Math.min(W, D) / 2;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + rnd();
+        const len = (H - trunkH) * 0.55;
+        const limb = new THREE.Mesh(solidGeometry({ shape: 'cylinder', width: trunkR * 0.9, depth: trunkR * 0.9, height: len, taper: 0.5 }), bark);
+        limb.position.set(Math.cos(a) * len * 0.22, trunkH + len * 0.4, Math.sin(a) * len * 0.22);
+        limb.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
+        g.add(limb);
+      }
+      const n = 28;
+      for (let i = 0; i < n; i++) {
+        // Points in an ellipsoid crown, biased outwards.
+        const u = rnd() * Math.PI * 2;
+        const v = Math.acos(2 * rnd() - 1);
+        const r = 0.45 + 0.55 * Math.sqrt(rnd());
+        const x = Math.sin(v) * Math.cos(u) * crownR * r * 0.8;
+        const z = Math.sin(v) * Math.sin(u) * crownR * r * 0.8;
+        const y = crownY + Math.cos(v) * (H - trunkH) * 0.42 * r;
+        const size = crownR * (0.34 + rnd() * 0.24);
+        g.add(leafCluster(m1, size, i + seed, x, y, z));
+      }
+      // A dense core so the crown reads as one canopy, not loose balls.
+      g.add(leafCluster(m1, crownR * 0.62, seed, 0, crownY, 0, 0.8));
+      break;
+    }
+    case 'shrub': {
+      let seed = [...el.id].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 53);
+      const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+      const r = Math.min(W, D) / 2;
+      for (let i = 0; i < 6; i++) {
+        const a = rnd() * Math.PI * 2;
+        const d = i === 0 ? 0 : r * (0.3 + rnd() * 0.35);
+        const size = r * (0.45 + rnd() * 0.25) * (i === 0 ? 1.2 : 1);
+        g.add(leafCluster(m1, size, i + seed, Math.cos(a) * d, Math.max(size * 0.7, H * (0.35 + rnd() * 0.3)), Math.sin(a) * d, H / (2 * r)));
+      }
       break;
     }
     case 'lounger': {

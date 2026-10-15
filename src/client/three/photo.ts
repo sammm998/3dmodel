@@ -166,9 +166,12 @@ export async function startPhotoRender(opts: {
   const sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
 
   // A clean scene: the building with presentation materials (refractive glass).
-  const materials = new MaterialManager('realistic', scene.materials, 'transmission');
+  // 2k scans for stills; wait for them so the tracer packs the photographed maps.
+  const materials = new MaterialManager('realistic', scene.materials, 'transmission', undefined, '2k');
   const world = new THREE.Scene();
   world.add(buildSceneGroup(scene, materials.get));
+  materials.get('grass');
+  await materials.ready(20_000);
   splitMultiMaterial(world);
   const b = sceneBounds({ ...scene, elements: scene.elements.filter((e) => e.type !== 'terrain') });
   const center = b ? new THREE.Vector3((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2) : new THREE.Vector3();

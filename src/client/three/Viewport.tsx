@@ -118,7 +118,7 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
   const customKey = JSON.stringify(customMaterials);
   const glassMode = viewMode === 'presentation' && !firstPerson ? 'transmission' : 'transparent';
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const materials = useMemo(() => new MaterialManager(style, customMaterials, glassMode), [style, customKey, glassMode]);
+  const materials = useMemo(() => new MaterialManager(style, customMaterials, glassMode, () => viewportHandles.invalidate?.()), [style, customKey, glassMode]);
   useEffect(() => () => materials.dispose(), [materials]);
   useEffect(() => {
     viewportHandles.container = containerRef.current;
@@ -197,6 +197,12 @@ export function Viewport({ interactive = true }: { interactive?: boolean }) {
         />}
         <Handles />
       </Canvas>
+      {style === 'realistic' && !firstPerson ? (
+        // Required credit for textures served through the Poly Haven API (CC0 scans).
+        <a href="https://polyhaven.com" target="_blank" rel="noreferrer" className="pointer-events-auto absolute bottom-2 left-2 rounded bg-black/25 px-1.5 py-0.5 text-[10px] text-white/60 hover:text-white/90" data-testid="polyhaven-credit">
+          Textures powered by Poly Haven
+        </a>
+      ) : null}
     </div>
   );
 }
