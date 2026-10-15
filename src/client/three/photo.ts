@@ -9,7 +9,7 @@
  * and glass look like a photograph; the image converges sample by sample.
  */
 import * as THREE from 'three';
-import { WebGLPathTracer } from 'three-gpu-pathtracer';
+import { DenoiseMaterial, WebGLPathTracer } from 'three-gpu-pathtracer';
 import type { Scene } from '@/core/schema/scene';
 import { buildSceneGroup } from '@/core/geometry/build3d';
 import { sceneBounds } from '@/core/scene/query';
@@ -229,6 +229,26 @@ export async function startPhotoRender(opts: {
   tracer.dynamicLowRes = false;
   tracer.renderScale = 1;
   tracer.tiles.set(2, 2);
+  // Edge-aware denoising while the image is young; it fades out as samples converge
+  // so fine texture is never smeared in the final image.
+  const denoise = new DenoiseMaterial({ transparent: true, blending: THREE.NoBlending, premultipliedAlpha: renderer.getContextAttributes()?.premultipliedAlpha ?? true });
+  tracer.renderToCanvasCallback = (target, r, quad) => {
+    const n = tracer.samples;
+    const prev = quad.material;
+    const autoClear = r.autoClear;
+    r.autoClear = false;
+    if (n < 256) {
+      const f = 1 - n / 256;
+      denoise.map = target.texture;
+      denoise.sigma = 1.5 + 3.5 * f;
+      denoise.threshold = 0.02 + 0.08 * f;
+      denoise.kSigma = 1;
+      quad.material = denoise;
+    }
+    quad.render(r);
+    quad.material = prev;
+    r.autoClear = autoClear;
+  };
   // Builds the BVH on the main thread (a moment for a typical house); the caller
   // shows a "preparing" state first.
   await new Promise((r) => setTimeout(r, 30));
@@ -263,6 +283,7 @@ export async function startPhotoRender(opts: {
       running = false;
       cancelAnimationFrame(raf);
       tracer.dispose();
+      denoise.dispose();
       env.dispose();
       world.traverse((o) => {
         const m = o as THREE.Mesh;

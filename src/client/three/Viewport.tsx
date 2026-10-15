@@ -3,7 +3,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { GizmoHelper, GizmoViewport, Grid, OrthographicCamera, PerformanceMonitor, PerspectiveCamera } from '@react-three/drei';
-import { EffectComposer, N8AO, SMAA } from '@react-three/postprocessing';
+import { Bloom, EffectComposer, N8AO, SMAA, Vignette } from '@react-three/postprocessing';
 import { useEditor } from '../store/editor';
 import { SceneObjects } from './SceneObjects';
 import { GroundCatcher, MeasureOverlay, RoomLabels, SelectionLabels, SelectionOutlines } from './Overlays';
@@ -91,6 +91,10 @@ function Effects({ lowPerf }: { lowPerf: boolean }) {
   return (
     <EffectComposer multisampling={0} enableNormalPass={false}>
       <N8AO halfRes aoRadius={0.9} intensity={2.2} distanceFalloff={0.6} quality="medium" />
+      {/* Camera-like finish: a soft glow around the brightest highlights (sun on glass,
+          water, white walls) and a gentle lens falloff towards the corners. */}
+      <Bloom mipmapBlur luminanceThreshold={0.85} luminanceSmoothing={0.2} intensity={0.35} radius={0.6} />
+      <Vignette offset={0.32} darkness={0.42} />
       <SMAA />
     </EffectComposer>
   );

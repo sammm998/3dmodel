@@ -4,7 +4,11 @@ import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { useEditor } from '../store/editor';
+import { preparedHdri, type HdriName } from './hdri';
 import { sceneBounds } from '@/core/scene/query';
+
+/** Photographed environment per lighting preset (image-based light and reflections). */
+const HDRI_FOR: Record<string, HdriName> = { day: 'park', sunset: 'sunset', overcast: 'city', night: 'night' };
 
 export const ENV_PRESETS = {
   day: { sky: { turbidity: 2.6, rayleigh: 1.3, mie: 0.004, mieG: 0.82, intensity: 0.62 }, ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.2, sun: '#fff1dc', sunI: 4.0, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
@@ -95,9 +99,9 @@ function PhysicalSky({ params, sunDir }: { params: SkyParams; sunDir: THREE.Vect
  * sees (plus a ground hemisphere for bounce light), so glass reflects the real
  * sky and shaded façades pick up blue skylight. No network assets.
  */
-function SkyEnvironment({ sky, gradient, sunDir, intensity, ground = '#8a8378' }: { sky: SkyParams | null; gradient: { top: string; horizon: string; bottom: string }; sunDir: THREE.Vector3; intensity: number; ground?: string }) {
+function SkyEnvironment({ sky, gradient, sunDir, intensity, ground = '#8a8378', hdri = null }: { sky: SkyParams | null; gradient: { top: string; horizon: string; bottom: string }; sunDir: THREE.Vector3; intensity: number; ground?: string; hdri?: HdriName | null }) {
   const { gl, scene, invalidate } = useThree();
-  const key = `${ground}|${JSON.stringify(sky)}|${JSON.stringify(gradient)}|${sunDir.toArray().map((v) => v.toFixed(3)).join(',')}`;
+  const key = `${hdri}|${ground}|${JSON.stringify(sky)}|${JSON.stringify(gradient)}|${sunDir.toArray().map((v) => v.toFixed(3)).join(',')}`;
   useEffect(() => {
     const envScene = new THREE.Scene();
     const skyMat = sky ? physicalSkyMaterial(sky, sunDir) : gradientSkyMaterial(gradient, sunDir);
@@ -118,8 +122,24 @@ function SkyEnvironment({ sky, gradient, sunDir, intensity, ground = '#8a8378' }
     gl.toneMapping = prevTone;
     scene.environment = env;
     invalidate();
+    // Then the photographed environment, when it has loaded (the synthetic one stays otherwise).
+    let cancelled = false;
+    let photoEnv: THREE.Texture | null = null;
+    if (hdri) {
+      preparedHdri(hdri, sunDir)
+        .then((tex) => {
+          if (cancelled) return tex.dispose();
+          photoEnv = pmrem.fromEquirectangular(tex).texture;
+          tex.dispose();
+          scene.environment = photoEnv;
+          invalidate();
+        })
+        .catch(() => {});
+    }
     return () => {
+      cancelled = true;
       scene.environment = null;
+      photoEnv?.dispose();
       env.dispose();
       pmrem.dispose();
       skyMat.dispose();
@@ -249,6 +269,7 @@ export function Lighting({ groundMaterial }: { groundMaterial?: THREE.Material }
             intensity={(settings.environment === 'night' ? 0.3 : 1) * (walkMode ? 1.3 : 1)}
             // Indoors the lower hemisphere is pale floors and walls rather than terrain.
             ground={walkMode ? '#d8d0c2' : '#8a8378'}
+            hdri={walkMode ? null : HDRI_FOR[settings.environment]}
           />
           {/* Indoors the light reaching ceilings bounces off pale floors and walls, not grass:
               warm the hemisphere's ground colour so ceilings read as white, not taupe. */}
