@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { resolveMaterial, type MaterialDef, type TexturePattern } from '@/core/materials/library';
 import type { CustomMaterial } from '@/core/schema/scene';
-import { PHOTO_MATERIALS } from '@/core/materials/photo';
+import { PHOTO_MATERIALS, photoTint } from '@/core/materials/photo';
 
 export type RenderStyle = 'technical' | 'realistic';
 
@@ -457,11 +457,8 @@ export class MaterialManager {
     const job = loadPhotoSet(spec.asset, this.photoRes).then((set) => {
       if (!set) return;
       const target = new THREE.Color(def.color);
-      const tint = new THREE.Color(
-        Math.min(3, target.r / Math.max(set.mean.r, 0.02)),
-        Math.min(3, target.g / Math.max(set.mean.g, 0.02)),
-        Math.min(3, target.b / Math.max(set.mean.b, 0.02)),
-      );
+      const t = photoTint(target, set.mean, !!spec.recolor);
+      const tint = new THREE.Color(t.r, t.g, t.b);
       m.color.copy(tint);
       m.map = set.map;
       m.normalMap = set.normal;

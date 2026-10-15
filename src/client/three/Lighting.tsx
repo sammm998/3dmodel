@@ -7,9 +7,9 @@ import { useEditor } from '../store/editor';
 import { sceneBounds } from '@/core/scene/query';
 
 export const ENV_PRESETS = {
-  day: { sky: { turbidity: 2.6, rayleigh: 1.3, mie: 0.004, mieG: 0.82, intensity: 0.62 }, ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.45, sun: '#fff1dc', sunI: 4.2, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
-  sunset: { sky: { turbidity: 5, rayleigh: 2.2, mie: 0.006, mieG: 0.86, intensity: 0.7 }, ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.45, sun: '#ffc290', sunI: 3.8, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
-  overcast: { sky: null, ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.5, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
+  day: { sky: { turbidity: 2.6, rayleigh: 1.3, mie: 0.004, mieG: 0.82, intensity: 0.62 }, ground: '#35501f', top: '#6b9ad6', horizon: '#e4ebf1', bottom: '#8a8f86', exposure: 1.2, sun: '#fff1dc', sunI: 4.0, hemiSky: '#cfe3ff', hemiGround: '#5b4f3f', hemiI: 0.55 },
+  sunset: { sky: { turbidity: 5, rayleigh: 2.2, mie: 0.006, mieG: 0.86, intensity: 0.7 }, ground: '#3a4520', top: '#5d6f96', horizon: '#f0d2b4', bottom: '#5a4a44', exposure: 1.25, sun: '#ffc290', sunI: 3.6, hemiSky: '#ffd2a8', hemiGround: '#3d2f2a', hemiI: 0.45 },
+  overcast: { sky: null, ground: '#3f5031', top: '#9aa4ae', horizon: '#d9dde1', bottom: '#7c7f7c', exposure: 1.35, sun: '#eef1f5', sunI: 1.2, hemiSky: '#dfe4ea', hemiGround: '#55524c', hemiI: 0.9 },
   night: { sky: null, ground: '#1a1d1a', top: '#05070d', horizon: '#1c2538', bottom: '#0a0b0e', exposure: 1.1, sun: '#9fb4ff', sunI: 0.35, hemiSky: '#3b4766', hemiGround: '#111318', hemiI: 0.35 },
 };
 
